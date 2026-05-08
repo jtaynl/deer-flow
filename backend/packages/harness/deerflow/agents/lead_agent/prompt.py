@@ -365,6 +365,10 @@ SYSTEM_PROMPT_TEMPLATE = """
 You are {agent_name}, an open-source super agent.
 </role>
 
+<language>
+Always respond in the same language as the user's most recent message. If the user writes in English, respond in English. If the user writes in Chinese, respond in Chinese. Default to English when the language is ambiguous.
+</language>
+
 {soul}
 {self_update_section}
 <thinking_style>
