@@ -185,6 +185,35 @@ make down && make up
     (matching the internal compose-nginx, which already does this with
     `proxy_buffering off` + `X-Accel-Buffering: no` on streaming routes).
 
+    Working `/etc/caddy/Caddyfile` for this setup (replace placeholders):
+
+    ```caddyfile
+    your-domain.example {
+        @encodeable {
+            not {
+                path /api/*
+            }
+        }
+        encode @encodeable gzip zstd
+
+        basic_auth {
+            <user> <bcrypt-hash from `caddy hash-password`>
+        }
+
+        reverse_proxy 127.0.0.1:2026 {
+            flush_interval -1
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+    ```
+
+    Generate the bcrypt hash once with `caddy hash-password` (interactive
+    prompt — never pass `--plaintext` from your shell history). After
+    editing the Caddyfile, reload with `sudo systemctl reload caddy`;
+    Caddy's reload is graceful and never drops in-flight connections.
+
 12. **`run_events.backend: db` is required for the chat-history UI.** The
     upstream default is `memory`, which keeps events only in-process. The
     frontend's `GET /api/threads/{id}/runs/{rid}/messages` endpoint reads
@@ -211,6 +240,85 @@ make down && make up
 
     psycopg (which the checkpointer + store use) reads `PGSSLMODE=require`
     from the env, so the URL still has no SSL query param.
+
+## Tuning recommendations
+
+These aren't required for a working deployment but are improvements
+discovered during production hardening. They're separate from the gotchas
+above because the upstream defaults work — these are just better.
+
+### Jina `web_fetch` timeout (10 → 30)
+
+The upstream `config.example.yaml` sets `timeout: 10` for the Jina reader
+tool. JavaScript-heavy pages routinely take longer than 10s to extract,
+causing roughly a 20% `ReadTimeout` rate in observed workloads. Bumping
+to 30 drops the timeout rate to near-zero without measurable downside:
+
+```yaml
+- name: web_fetch
+  group: web
+  use: deerflow.community.jina_ai.tools:web_fetch_tool
+  timeout: 30
+```
+
+### DeepSeek via native API instead of OpenRouter
+
+OpenRouter's OpenAI-compatible passthrough strips the `reasoning_content`
+field from DeepSeek's responses, which breaks multi-turn thinking — on
+the second turn the DeepSeek API rejects the request because earlier
+assistant messages are missing their required `reasoning_content`. The
+fork ships `PatchedChatDeepSeek` (in `deerflow.models.patched_deepseek`)
+which talks to DeepSeek's native API and preserves the field across
+turns. To use it (substitute the DeepSeek model slug you want from
+`https://api.deepseek.com/v1/models`):
+
+```yaml
+- name: deepseek-v4-pro
+  use: deerflow.models.patched_deepseek:PatchedChatDeepSeek
+  model: deepseek-v4-pro
+  api_key: $DEEPSEEK_API_KEY
+  timeout: 600.0
+  max_retries: 2
+  max_tokens: 32768
+  supports_thinking: true
+  supports_reasoning_effort: true
+  when_thinking_enabled:
+    extra_body:
+      thinking:
+        type: enabled
+  when_thinking_disabled:
+    extra_body:
+      thinking:
+        type: disabled
+```
+
+Add `DEEPSEEK_API_KEY=<key>` to `.env`. Kimi K2.6 and Claude Opus 4.7
+don't have this issue with OpenRouter — they can stay on the
+`langchain_openai:ChatOpenAI + base_url=https://openrouter.ai/api/v1`
+pattern.
+
+### Persistence config block (full reference)
+
+Three sections must be present together for a fully-persistent deployment.
+Cross-reference gotchas #3, #12, #13. Both `checkpointer:` and `database:`
+point at the same Postgres URL — psycopg (used by checkpointer + store)
+and asyncpg (used by SQLAlchemy engine) both read `PGSSLMODE=require`
+from the env, so the URL stays SSL-param-free:
+
+```yaml
+checkpointer:                    # LangGraph state + Store (via psycopg)
+  type: postgres
+  connection_string: $DATABASE_URL
+
+database:                        # DeerFlow app data (via SQLAlchemy + asyncpg)
+  backend: postgres
+  postgres_url: $DATABASE_URL
+
+run_events:                      # chat-history surface — MUST be 'db'
+  backend: db
+  max_trace_content: 10240
+  track_token_usage: true
+```
 
 ## Postgres tables managed by DeerFlow
 
@@ -264,6 +372,41 @@ for cb in handlers:
 
 Upstream has not (as of 2026-05-20) accepted a fix for this. If/when they
 do, our patch becomes a no-op during rebase and git will auto-drop it.
+
+## Maintainer hygiene
+
+If you push commits from this server to your fork (e.g. when adding new
+local patches or updating docs), configure git to use your GitHub no-reply
+email — not your personal email — so the public commit history doesn't
+expose it:
+
+```bash
+# Per-repo (preferred; doesn't affect other clones on the host)
+git config user.email "<your-github-user-id>+<your-github-login>@users.noreply.github.com"
+git config user.name  "<your-github-login>"
+```
+
+Find your numeric user ID via `gh api user --jq '.id'` or
+`https://api.github.com/users/<login>`. Belt-and-suspenders: enable both
+checkboxes at https://github.com/settings/emails:
+
+- **Keep my email addresses private**
+- **Block command line pushes that expose my email**
+
+The second one would have prevented past mistakes by failing the push
+with a clear error pointing at the no-reply address. If old commits with
+a personal email are already pushed, rewrite the recent N commits and
+force-push to `local-fixes`:
+
+```bash
+git rebase HEAD~<N> --exec 'git commit --amend --no-edit --reset-author'
+git push --force-with-lease origin local-fixes
+```
+
+GitHub's events API may cache the old email briefly (usually purges
+within a day); the Git history itself is corrected immediately. Anyone
+who already cloned `local-fixes` keeps the old commits locally — usually
+that's just the production server, where it doesn't matter.
 
 ## Quick health check
 
