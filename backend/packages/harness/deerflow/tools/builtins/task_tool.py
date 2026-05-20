@@ -108,7 +108,10 @@ def _find_usage_recorder(runtime: Any) -> Any | None:
     callbacks = config.get("callbacks", [])
     if not callbacks:
         return None
-    for cb in callbacks:
+    # langgraph passes config["callbacks"] as an AsyncCallbackManager (not a
+    # plain list) in recent versions; normalize to its handler list.
+    handlers = getattr(callbacks, "handlers", callbacks)
+    for cb in handlers:
         if hasattr(cb, "record_external_llm_usage_records"):
             return cb
     return None
