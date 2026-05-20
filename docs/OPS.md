@@ -477,6 +477,66 @@ If a future DeerFlow update teaches `ClaudeChatModel` to emit the new
 `auto_thinking_budget` and `supports_reasoning_effort` back to `true`
 and Claude will steer reasoning depth from the UI again.
 
+### Qwen via Alibaba DashScope (OpenAI-compatible)
+
+DashScope's `compatible-mode/v1` endpoint accepts standard OpenAI-style
+requests, so plain `langchain_openai:ChatOpenAI` with a custom `base_url`
+works without any patched provider. The only quirk is the thinking
+toggle: Qwen uses a top-level `enable_thinking: true|false` field
+(passed via `extra_body`), **not** the OpenAI-style `reasoning_effort`
+kwarg.
+
+```yaml
+- name: qwen3.6-max-preview
+  display_name: Qwen3.6 Max Preview (DashScope)
+  use: langchain_openai:ChatOpenAI
+  model: qwen3.6-max-preview                 # rerun /v1/models if slug shifts
+  api_key: $DASHSCOPE_API_KEY
+  base_url: https://dashscope-intl.aliyuncs.com/compatible-mode/v1
+  request_timeout: 600.0
+  max_retries: 2
+  max_tokens: 32768
+  temperature: 0.7
+  supports_thinking: true
+  supports_reasoning_effort: false           # Qwen uses enable_thinking, not reasoning_effort
+  when_thinking_enabled:
+    extra_body:
+      enable_thinking: true
+  when_thinking_disabled:
+    extra_body:
+      enable_thinking: false
+```
+
+Add `DASHSCOPE_API_KEY=<key>` to `.env`.
+
+Quick verification recipe — list the slugs your key has access to:
+
+```bash
+curl -sS -H "Authorization: Bearer $DASHSCOPE_API_KEY" \
+  https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models \
+  | python3 -c "import json,sys; d=json.load(sys.stdin); print('\n'.join(m['id'] for m in d['data'] if 'qwen3' in m['id'].lower()))" \
+  | head
+```
+
+**Caveats:**
+
+1. **`-preview` slugs are not stable.** Alibaba may rename or remove
+   `qwen3.6-max-preview` without warning. Pin to a dated suffix (e.g.
+   `qwen3-max-2026-01-23`) if you need long-term stability, accepting
+   the older version.
+2. **Multi-turn thinking is unverified** through plain `ChatOpenAI`.
+   Like DeepSeek, Qwen returns `reasoning_content` on each turn. If the
+   API requires that field to be echoed back on subsequent turns when
+   thinking is enabled, multi-turn runs will fail the same way DeepSeek
+   did before we switched to `PatchedChatDeepSeek`. If you see this,
+   either disable thinking on Qwen (`supports_thinking: false`) or
+   write a `PatchedChatQwen` analogous to the DeepSeek patch.
+
+The international DashScope endpoint
+(`dashscope-intl.aliyuncs.com`) is what's used here; the mainland-China
+endpoint (`dashscope.aliyuncs.com`) needs a different key. The two are
+not interchangeable.
+
 ### Persistence config block (full reference)
 
 Three sections must be present together for a fully-persistent deployment.
