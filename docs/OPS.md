@@ -166,23 +166,64 @@ make down && make up
     `extensions_config.json`, and `skills/` — those *are* mounted from the
     host.
 
+11. **Caddy `encode` must skip `/api/*` and `reverse_proxy` needs
+    `flush_interval -1`.** Caddy's `encode gzip zstd` buffers compressed
+    output until each chunk boundary; the gateway's SSE responses
+    (`text/event-stream`) appear to hang for tens of seconds and then dump
+    the entire result at once — visible to users as "moving dots, then a
+    sudden big response." The Caddyfile must use a request matcher that
+    excludes the `/api/*` surface from `encode`, and the `reverse_proxy`
+    block must set `flush_interval -1` to forward each chunk immediately
+    (matching the internal compose-nginx, which already does this with
+    `proxy_buffering off` + `X-Accel-Buffering: no` on streaming routes).
+
+12. **`run_events.backend: db` is required for the chat-history UI.** The
+    upstream default is `memory`, which keeps events only in-process. The
+    frontend's `GET /api/threads/{id}/runs/{rid}/messages` endpoint reads
+    from the `run_events` table, so with `memory` it always returns an
+    empty list — the user's own prompt vanishes from the chat the moment
+    the UI re-syncs from the server during a streaming run. Set
+    `run_events.backend: db` to persist messages and traces into Postgres.
+
+13. **The legacy `checkpointer:` section is required *in addition to*
+    `database:`** for the LangGraph Store. Without it, the store falls
+    back to `InMemoryStore` (the gateway logs `WARNING - No 'checkpointer'
+    section ... Thread list will be lost on server restart`). The
+    `database:` section drives application data only (runs, threads_meta,
+    feedback, run_events). Both should point at the same Postgres:
+
+    ```yaml
+    checkpointer:
+      type: postgres
+      connection_string: $DATABASE_URL
+    database:
+      backend: postgres
+      postgres_url: $DATABASE_URL
+    ```
+
+    psycopg (which the checkpointer + store use) reads `PGSSLMODE=require`
+    from the env, so the URL still has no SSL query param.
+
 ## Postgres tables managed by DeerFlow
 
-On a fresh deploy, the gateway's startup creates 9 tables in your Postgres
-database (5 from DeerFlow + 4 from langgraph checkpointer):
+On a fresh deploy with both `database:` and `checkpointer:` configured plus
+`run_events.backend: db`, the gateway's startup creates 11 tables in your
+Postgres database:
 
-```
-checkpoint_blobs           checkpoint_migrations    checkpoint_writes
-checkpoints                feedback                 run_events
-runs                       threads_meta             users
-```
+| Source | Tables |
+|---|---|
+| DeerFlow (`database:` via SQLAlchemy) | `feedback`, `run_events`, `runs`, `threads_meta`, `users` |
+| langgraph checkpointer (`database:` or `checkpointer:`) | `checkpoint_blobs`, `checkpoint_migrations`, `checkpoint_writes`, `checkpoints` |
+| langgraph store (`checkpointer:` section) | `store`, `store_migrations` |
 
-The langgraph migration is **not idempotent** across multiple uvicorn workers
-on a fresh DB — `GATEWAY_WORKERS=4` means 4 workers race to create the
-implicit row types, and 3 of them will crash with `UniqueViolation` on
-`pg_type_typname_nsp_index`. The winning worker creates the tables, the
-losers are auto-replaced by uvicorn, and steady-state is reached. This is a
-known transient warning on first-ever start; it is **not** a problem on
+The langgraph migrations (both checkpointer and store) are **not idempotent**
+across multiple uvicorn workers on a fresh DB — `GATEWAY_WORKERS=4` means
+4 workers race to create the implicit row types, and 3 of them will crash
+with `UniqueViolation` on `pg_type_typname_nsp_index`. The winning worker
+creates the tables, the losers are auto-replaced by uvicorn, and steady-state
+is reached. This is a known transient warning on first-ever start (you'll
+see it for `checkpoint_migrations`, and again for `store_migrations` when
+the `checkpointer:` section is first added); it is **not** a problem on
 restarts where the tables already exist.
 
 If you need a clean slate (e.g., schema drift after major upstream changes):
