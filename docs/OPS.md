@@ -487,10 +487,10 @@ toggle: Qwen uses a top-level `enable_thinking: true|false` field
 kwarg.
 
 ```yaml
-- name: qwen3.6-max-preview
-  display_name: Qwen3.6 Max Preview (DashScope)
+- name: qwen3.6-plus
+  display_name: Qwen3.6 Plus (DashScope)
   use: langchain_openai:ChatOpenAI
-  model: qwen3.6-max-preview                 # rerun /v1/models if slug shifts
+  model: qwen3.6-plus                        # stable production tag
   api_key: $DASHSCOPE_API_KEY
   base_url: https://dashscope-intl.aliyuncs.com/compatible-mode/v1
   request_timeout: 600.0
@@ -518,21 +518,22 @@ curl -sS -H "Authorization: Bearer $DASHSCOPE_API_KEY" \
   | head
 ```
 
-**Caveats:**
+**Multi-turn thinking works** through plain `ChatOpenAI` — verified in
+production with 24 consecutive successful calls and `reasoning_tokens`
+counts (102/145/171/270/125) across the conversation. Unlike DeepSeek,
+DashScope does not require `reasoning_content` echoed back on
+subsequent turns, so no `PatchedChatQwen` wrapper is needed.
 
-1. **`-preview` slugs are not stable.** Alibaba may rename or remove
-   `qwen3.6-max-preview` without warning. Pin to a dated suffix (e.g.
-   `qwen3-max-2026-01-23`) if you need long-term stability, accepting
-   the older version.
-2. **Multi-turn thinking is unverified** through plain `ChatOpenAI`.
-   Like DeepSeek, Qwen returns `reasoning_content` on each turn. If the
-   API requires that field to be echoed back on subsequent turns when
-   thinking is enabled, multi-turn runs will fail the same way DeepSeek
-   did before we switched to `PatchedChatDeepSeek`. If you see this,
-   either disable thinking on Qwen (`supports_thinking: false`) or
-   write a `PatchedChatQwen` analogous to the DeepSeek patch.
+**Tier choice — `-plus` vs `-max-preview`:**
 
-The international DashScope endpoint
+- `qwen3.6-plus` (used above) — stable production tag, mid-tier, faster
+  and cheaper. Recommended default.
+- `qwen3.6-max-preview` — newer top-tier model but a `-preview` slug:
+  Alibaba may rename or remove it without warning. Pin a dated suffix
+  (e.g. `qwen3-max-2026-01-23`) if you want the heaviest model with
+  long-term slug stability.
+
+Either way, the international DashScope endpoint
 (`dashscope-intl.aliyuncs.com`) is what's used here; the mainland-China
 endpoint (`dashscope.aliyuncs.com`) needs a different key. The two are
 not interchangeable.
