@@ -398,24 +398,48 @@ caching stays on.
   api_key: $ANTHROPIC_API_KEY
   default_request_timeout: 600.0        # NB: 'default_request_timeout', not 'timeout'
   max_retries: 2
-  max_tokens: 32768                     # 80% (~26k) reserved for reasoning when thinking on
-  supports_thinking: true
-  supports_reasoning_effort: true
+  max_tokens: 32768
+  supports_thinking: true               # toggles thinking_enabled, not budget
+  supports_reasoning_effort: false      # see note below — Anthropic rejects it
   supports_vision: true
   enable_prompt_caching: true           # explicit (default true)
-  when_thinking_enabled:
-    thinking:
-      type: enabled
-  when_thinking_disabled:
-    thinking:
-      type: disabled
+  auto_thinking_budget: false           # see note below — Opus 4.7 schema mismatch
 ```
 
-Add `ANTHROPIC_API_KEY=<key>` to `.env`. **Do not set `temperature`** on
-Claude Opus 4.7 (or other newer Anthropic models — Sonnet 4.x, Haiku
-4.5+); they reject requests with that parameter as `400 invalid_request_error:
-`temperature` is deprecated for this model.` Sampling diversity is now
-driven by the thinking process itself.
+Add `ANTHROPIC_API_KEY=<key>` to `.env`.
+
+**Three Opus 4.7 quirks that older Anthropic configs got wrong** (each
+returns HTTP 400 on the first call if you don't preempt it):
+
+1. **No `temperature`** — Anthropic deprecated this on newer Opus/Sonnet/Haiku
+   4.x. Requests with `temperature` return:
+   `"temperature" is deprecated for this model.` Sampling diversity is
+   driven by the thinking process now. Omit the field; the factory will
+   not add a default.
+
+2. **No `reasoning_effort` kwarg** — the DeerFlow UI sends an OpenAI-style
+   `reasoning_effort: low|medium|high` based on the picked mode. The
+   Anthropic SDK doesn't accept that param and raises
+   `AsyncMessages.create() got an unexpected keyword argument 'reasoning_effort'`.
+   Setting `supports_reasoning_effort: false` makes the factory strip the
+   kwarg before invocation (see `backend/.../models/factory.py:113`).
+
+3. **No legacy `thinking.type: enabled`** — Opus 4.7 changed the thinking
+   API from `thinking: { type: enabled, budget_tokens: N }` to
+   `thinking: { type: adaptive }` + `output_config: { effort: ... }`.
+   Sending the old shape returns:
+   `"thinking.type.enabled" is not supported for this model. Use "thinking.type.adaptive" and "output_config.effort" to control thinking behavior.`
+   The DeerFlow `ClaudeChatModel.auto_thinking_budget` was written for
+   the old schema; **set `auto_thinking_budget: false` and omit the
+   `when_thinking_enabled`/`when_thinking_disabled` blocks entirely**.
+   Opus 4.7 will pick its own thinking budget adaptively. The trade-off:
+   you lose UI-driven reasoning intensity control on Claude, but the
+   model decides its own depth per prompt (which it's typically good at).
+
+If a future DeerFlow update teaches `ClaudeChatModel` to emit the new
+`thinking.type: adaptive` + `output_config.effort` shape, you can flip
+`auto_thinking_budget` and `supports_reasoning_effort` back to `true`
+and Claude will steer reasoning depth from the UI again.
 
 ### Persistence config block (full reference)
 
