@@ -332,6 +332,40 @@ don't have this issue with OpenRouter — they can stay on the
 `langchain_openai:ChatOpenAI + base_url=https://openrouter.ai/api/v1`
 pattern.
 
+### Gemini 3.x via native Google API instead of OpenRouter
+
+Same family of problem: Gemini 3.x thinking returns a `thought_signature`
+on tool-call objects that the native API requires back on every
+multi-turn request. OpenRouter's OpenAI-compatible passthrough drops
+that field, breaking tool-using runs in Reasoning/Ultra mode. (Upstream
+ships `deerflow.models.patched_openai:PatchedChatOpenAI` as a workaround
+for OpenRouter-proxied Gemini — but using the native Google API is
+simpler, since `langchain_google_genai:ChatGoogleGenerativeAI` handles
+`thought_signature` correctly out of the box.)
+
+```yaml
+- name: gemini-3.1-pro
+  display_name: Gemini 3.1 Pro Preview
+  use: langchain_google_genai:ChatGoogleGenerativeAI
+  model: gemini-3.1-pro-preview         # native slug, no provider prefix
+  timeout: 600.0
+  max_retries: 2
+  max_output_tokens: 32768              # not max_tokens — Google SDK uses this name
+  temperature: 0.7
+  supports_thinking: true
+  supports_reasoning_effort: true
+```
+
+Add `GOOGLE_API_KEY=<key>` to `.env`. `langchain_google_genai` (a hard
+dep in `pyproject.toml`, already in the gateway image; no UV_EXTRAS
+needed) auto-reads the key from the env var, so no `api_key:` field in
+the config. Verify the key has access to the model with:
+
+```bash
+curl -sS "https://generativelanguage.googleapis.com/v1beta/models?key=$GOOGLE_API_KEY" \
+  | python3 -c "import json,sys; d=json.load(sys.stdin); print('\n'.join(m['name'] for m in d['models'] if 'gemini-3' in m['name']))"
+```
+
 ### Persistence config block (full reference)
 
 Three sections must be present together for a fully-persistent deployment.
