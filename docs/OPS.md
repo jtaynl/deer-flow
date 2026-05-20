@@ -366,6 +366,57 @@ curl -sS "https://generativelanguage.googleapis.com/v1beta/models?key=$GOOGLE_AP
   | python3 -c "import json,sys; d=json.load(sys.stdin); print('\n'.join(m['name'] for m in d['models'] if 'gemini-3' in m['name']))"
 ```
 
+### Claude via native Anthropic API + DeerFlow's ClaudeChatModel
+
+DeerFlow ships a custom Claude provider
+(`deerflow.models.claude_provider:ClaudeChatModel`) which subclasses
+`langchain_anthropic.ChatAnthropic` and adds two material wins over the
+OpenRouter passthrough:
+
+1. **Prompt caching on by default** — the provider stamps
+   `cache_control: { type: ephemeral }` on the system prompt, the 3 most
+   recent messages, and the last tool definition. Long-running threads
+   with stable system prompts then hit Anthropic's cached-input pricing
+   (~90% discount on the cached prefix). Visible in `usage_metadata` as
+   rising `cache_read` / `ephemeral_5m_input_tokens` over a conversation.
+2. **Auto thinking budget** — when `thinking_enabled=true` (Reasoning,
+   Pro, Ultra modes), 80% of `max_tokens` is automatically reserved for
+   the reasoning chain. Avoids the manual `thinking.budget_tokens`
+   tuning needed with raw `ChatAnthropic`.
+
+It also transparently handles Claude Code OAuth tokens (`sk-ant-oat-…`)
+if you ever paste one — auto-swaps `x-api-key` for `Authorization:
+Bearer` and disables prompt caching (OAuth token's 4-cache-control limit).
+For standard `sk-ant-api03-…` keys, normal `x-api-key` auth is used and
+caching stays on.
+
+```yaml
+- name: claude-opus-4.7
+  display_name: Claude Opus 4.7
+  use: deerflow.models.claude_provider:ClaudeChatModel
+  model: claude-opus-4-7                # native slug — dashes, not dots
+  api_key: $ANTHROPIC_API_KEY
+  default_request_timeout: 600.0        # NB: 'default_request_timeout', not 'timeout'
+  max_retries: 2
+  max_tokens: 32768                     # 80% (~26k) reserved for reasoning when thinking on
+  supports_thinking: true
+  supports_reasoning_effort: true
+  supports_vision: true
+  enable_prompt_caching: true           # explicit (default true)
+  when_thinking_enabled:
+    thinking:
+      type: enabled
+  when_thinking_disabled:
+    thinking:
+      type: disabled
+```
+
+Add `ANTHROPIC_API_KEY=<key>` to `.env`. **Do not set `temperature`** on
+Claude Opus 4.7 (or other newer Anthropic models — Sonnet 4.x, Haiku
+4.5+); they reject requests with that parameter as `400 invalid_request_error:
+`temperature` is deprecated for this model.` Sampling diversity is now
+driven by the thinking process itself.
+
 ### Persistence config block (full reference)
 
 Three sections must be present together for a fully-persistent deployment.
