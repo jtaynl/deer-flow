@@ -241,6 +241,41 @@ make down && make up
     psycopg (which the checkpointer + store use) reads `PGSSLMODE=require`
     from the env, so the URL still has no SSL query param.
 
+14. **AIO sandbox provider does not health-check before reuse.** The
+    gateway keeps an in-process map of `thread_id → sandbox_id`. If the
+    underlying sandbox container dies between tool calls (idle eviction,
+    OOM, `--rm` after exit, a host-level `docker rm`, or any DooD-side
+    cleanup), the provider keeps reusing the dead ID. Every subsequent
+    tool call in that thread hangs ~120 s and then fails with
+    `Failed to execute command in sandbox: [Errno 110] Connection timed out`.
+    The agent's reasoning loop keeps retrying tool calls that all time
+    out, burning tokens and producing no progress.
+
+    Diagnose:
+
+    ```bash
+    sg docker -c 'docker ps --filter name=deer-flow-sandbox --format "{{.Names}}: {{.Status}}"'
+    # if empty AND the gateway log shows "Reusing in-process sandbox <id>"
+    # for a thread that's stuck, you're in this state.
+    ```
+
+    Fix — restart **just the gateway**, not the full stack. That clears
+    the in-process map without bouncing the frontend/nginx:
+
+    ```bash
+    sg docker -c 'docker restart deer-flow-gateway'
+    ```
+
+    `docker compose restart gateway` does NOT work outside of `make up` —
+    it silently fails to substitute the volume specs (the env vars
+    `deploy.sh` exports aren't present), prints `invalid spec:
+    :/app/backend/config.yaml:ro: empty section between colons`, and
+    leaves the gateway unchanged. Use plain `docker restart`.
+
+    After the gateway restart, the next tool call from any thread spins
+    up a fresh sandbox container automatically — no manual cleanup
+    needed.
+
 ## Tuning recommendations
 
 These aren't required for a working deployment but are improvements
