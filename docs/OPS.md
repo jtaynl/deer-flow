@@ -140,6 +140,14 @@ make down && make up
 6. **`supports_thinking: true` + `supports_reasoning_effort: true` on every
    model entry** are required for the UI mode picker to offer
    Reasoning/Pro/Ultra. Without them, every model is forced to Flash.
+   Also bump `max_tokens` to at least `32768` (16384 minimum) on these
+   entries. With thinking enabled, reasoning tokens count against
+   `max_tokens` — the upstream example value of `8192` regularly burns the
+   whole budget on the reasoning chain and truncates the visible answer
+   to a few tokens. Modern reasoning models (DeepSeek V4, Kimi K2.6,
+   Claude Opus 4.x) all support 128K+ completion tokens; `32768` is a
+   safe headroom for Ultra-mode answers without any meaningful cost
+   increase (you only pay for tokens actually generated).
 
 7. **`UV_EXTRAS=postgres` in `.env`** is required when `database.backend:
    postgres`. It's passed through to the gateway image build as a Docker
