@@ -276,6 +276,42 @@ make down && make up
     up a fresh sandbox container automatically — no manual cleanup
     needed.
 
+15. **AIO sandbox `/v1/shell/exec` runs as `uid=1000 (gem)`, NOT as root.**
+    The container itself starts as root (visible from
+    `docker exec <sandbox> id` → `uid=0`), but the shell-exec HTTP
+    endpoint the agent actually uses runs commands as a non-root user
+    `gem`. This trips up any operator who tests sandbox file access with
+    `docker exec` and concludes "works fine" — the agent will still hit
+    `Permission denied`. **Use the HTTP endpoint for any sandbox file/
+    permission verification:**
+
+    ```bash
+    curl -sS -X POST -H 'Content-Type: application/json' \
+      -d '{"command":"id; head -c 80 /mnt/user-data/uploads/<file>"}' \
+      "http://127.0.0.1:<sandbox-host-port>/v1/shell/exec"
+    ```
+
+    The gateway by default writes uploaded files as root with mode
+    `0600` (its own umask), so the sandbox user immediately gets
+    `Permission denied` on `/mnt/user-data/uploads/*`. The agent then
+    detours through `sudo cp /mnt/user-data/uploads/X /mnt/user-data/workspace/X
+    && sudo chown $(whoami):$(whoami) /mnt/user-data/workspace/X` —
+    which works but burns turns and triggers the audit middleware's
+    medium-risk warning on every upload.
+
+    This fork carries a small patch in
+    `backend/app/gateway/routers/uploads.py` that `chmod 0644`s every
+    uploaded file after write, so the sandbox user can read them
+    directly with no sudo. If you're rebuilding this deployment on a
+    different host or branch where the patch isn't present, either
+    cherry-pick that patch or run as a one-off remediation:
+
+    ```bash
+    sg docker -c 'docker exec deer-flow-gateway sh -c \
+      "find /app/backend/.deer-flow/users -path \"*/user-data/uploads/*\" \
+       -type f -exec chmod 644 {} +"'
+    ```
+
 ## Tuning recommendations
 
 These aren't required for a working deployment but are improvements
