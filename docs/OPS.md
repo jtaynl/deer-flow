@@ -595,24 +595,14 @@ docker run --rm -e PGSSLMODE=require postgres:16-alpine \
 ## Local patches currently carried on `local-fixes`
 
 Run `git log --oneline upstream/main..local-fixes` for the current list.
-The hotfix worth knowing about:
+The only runtime hotfix currently carrying is `fix(uploads): chmod uploaded
+files to 0644 so sandbox user can read`, which is described under gotcha #15
+above. The rest are branding/UI tweaks and docs.
 
-**`fix(task_tool): handle AsyncCallbackManager in _find_usage_recorder`**
-
-Recent langgraph passes `config["callbacks"]` as an `AsyncCallbackManager`
-(not a list). The upstream iteration `for cb in callbacks:` crashes with
-`TypeError` on every subagent dispatch in Ultra mode. The fix normalizes
-via `.handlers` when present:
-
-```python
-handlers = getattr(callbacks, "handlers", callbacks)
-for cb in handlers:
-    if hasattr(cb, "record_external_llm_usage_records"):
-        return cb
-```
-
-Upstream has not (as of 2026-05-20) accepted a fix for this. If/when they
-do, our patch becomes a no-op during rebase and git will auto-drop it.
+The previous `fix(task_tool): handle AsyncCallbackManager in _find_usage_recorder`
+hotfix was absorbed upstream on 2026-05-21 (the merge into `e93f6584`
+introduced an equivalent `isinstance(BaseCallbackManager)` check). The
+commit remains in history but the file content now matches upstream.
 
 ## Maintainer hygiene
 
