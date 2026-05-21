@@ -592,6 +592,71 @@ docker run --rm -e PGSSLMODE=require postgres:16-alpine \
       GRANT ALL ON SCHEMA public TO public;"
 ```
 
+## MCP servers
+
+The runtime gateway image bakes Microsoft's [`@playwright/mcp`](https://github.com/microsoft/playwright-mcp)
+plus Chromium so deployments can enable browser automation without
+running a separate container. The package version and the browser are
+pinned at image-build time in `backend/Dockerfile`:
+
+- npm package: `@playwright/mcp@0.0.75` (override via
+  `--build-arg PLAYWRIGHT_MCP_VERSION=<ver>`)
+- Browser cache: `/ms-playwright` (`PLAYWRIGHT_BROWSERS_PATH`)
+
+To enable, add the entry to `extensions_config.json` (gitignored —
+per-deployment state):
+
+```json
+{
+  "mcpServers": {
+    "playwright": {
+      "enabled": true,
+      "type": "stdio",
+      "command": "npx",
+      "args": ["@playwright/mcp@0.0.75", "--headless", "--isolated",
+               "--no-sandbox", "--browser", "chromium"]
+    }
+  }
+}
+```
+
+Flag rationale for the Docker runtime:
+
+- `--headless` — no display server in the container
+- `--isolated` — clean profile per session; sidesteps the persistent-profile
+  lockfile conflict the upstream README warns about
+- `--no-sandbox` — chromium's internal sandbox needs `CAP_SYS_ADMIN`
+  which isn't granted by default; the gateway container is the security
+  boundary, not the browser
+
+DeerFlow loads MCP tools lazily on first agent use and watches
+`extensions_config.json` via mtime polling, so the config entry itself
+needs no restart. The chromium binary is baked at build time, though, so
+**adding the dependency** (or bumping `PLAYWRIGHT_MCP_VERSION`) requires
+`make down && make up`.
+
+Quick sanity check that chromium launches and the MCP responds
+(independent of the gateway agent path):
+
+```bash
+# 1. Write the JSON-RPC handshake payload (initialize + initialized + tools/list)
+cat > /tmp/mcp-probe.jsonl <<'EOF'
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}
+{"jsonrpc":"2.0","method":"notifications/initialized"}
+{"jsonrpc":"2.0","id":2,"method":"tools/list"}
+EOF
+
+# 2. Pipe it into the MCP inside the gateway container
+sg docker -c 'docker exec -i deer-flow-gateway \
+  npx -y @playwright/mcp@0.0.75 --headless --isolated --no-sandbox \
+      --browser chromium' < /tmp/mcp-probe.jsonl | head -5
+```
+
+Expect two JSON-RPC response lines — an `initialize` ack with
+`serverInfo.name == "Playwright"`, then a `tools/list` reply carrying
+23 tools (`browser_navigate`, `browser_click`, `browser_snapshot`,
+`browser_take_screenshot`, `browser_evaluate`, etc.).
+
 ## Local patches currently carried on `local-fixes`
 
 Run `git log --oneline upstream/main..local-fixes` for the current list.
