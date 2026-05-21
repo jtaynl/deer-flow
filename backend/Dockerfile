@@ -85,6 +85,16 @@ RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/bin/npm \
 # Install Docker CLI (for DooD: allows starting sandbox containers via host Docker socket)
 COPY --from=docker:cli /usr/local/bin/docker /usr/local/bin/docker
 
+# Install Playwright MCP + Chromium for browser automation (Microsoft @playwright/mcp).
+# PLAYWRIGHT_BROWSERS_PATH pins the browser location so it's found regardless of HOME.
+# --with-deps pulls libnss3/libx11/fontconfig/etc. via apt; clean apt lists after.
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+ARG PLAYWRIGHT_MCP_VERSION=0.0.75
+RUN apt-get update \
+    && npm install -g @playwright/mcp@${PLAYWRIGHT_MCP_VERSION} playwright \
+    && npx playwright install --with-deps chromium \
+    && rm -rf /var/lib/apt/lists/* /root/.npm
+
 # Install uv (source image overridable via UV_IMAGE build arg)
 COPY --from=uv-source /uv /uvx /usr/local/bin/
 
