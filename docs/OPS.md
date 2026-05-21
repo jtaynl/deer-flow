@@ -312,6 +312,42 @@ make down && make up
        -type f -exec chmod 644 {} +"'
     ```
 
+16. **`readabilipy`'s bundled Node deps aren't installed by `uv sync`.**
+    The Python `readabilipy` package (used by `deerflow.community.jina_ai`
+    as the local fallback when Jina's reader returns sparse content)
+    ships an `ExtractArticle.js` that does `require('@mozilla/readability')`,
+    `require('jsdom')`, and `require('minimist')`. None of those are pip
+    dependencies — they're Node modules declared in a `package.json`
+    *inside the venv* at `site-packages/readabilipy/javascript/`, and the
+    package's documented install flow is `pip install readabilipy && cd
+    .../javascript && npm install`. `uv sync` only runs the pip half,
+    leaving an empty `node_modules/@mozilla/` directory. The visible
+    failure is repeated `Cannot find module '@mozilla/readability'`
+    tracebacks at WARNING level whenever the Readability.js fallback
+    fires (typically alongside Jina `ReadTimeout` warnings on slow sites).
+
+    This fork's `backend/Dockerfile` (commit `910d6b6d`) adds an explicit
+    `npm install --omit=dev` step in the builder stage so the populated
+    `node_modules` ships inside the venv copied to the runtime image. If
+    you're deploying on a different fork or branch, either cherry-pick
+    that change or hot-patch the running container (ephemeral — wiped on
+    next rebuild):
+
+    ```bash
+    sg docker -c 'docker exec deer-flow-gateway sh -c \
+      "cd /app/backend/.venv/lib/python3.12/site-packages/readabilipy/javascript \
+       && rm -rf node_modules package-lock.json \
+       && npm install --omit=dev --no-audit --no-fund"'
+    ```
+
+    To verify resolution works after either path:
+
+    ```bash
+    sg docker -c 'docker exec deer-flow-gateway node -e \
+      "console.log(require.resolve(\"@mozilla/readability\"))"' 2>/dev/null
+    # expect: /app/backend/.venv/.../node_modules/@mozilla/readability/index.js
+    ```
+
 ## Tuning recommendations
 
 These aren't required for a working deployment but are improvements
