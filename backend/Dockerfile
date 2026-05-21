@@ -50,6 +50,13 @@ COPY backend ./backend
 RUN --mount=type=cache,target=/root/.cache/uv \
     sh -c "cd backend && UV_INDEX_URL=${UV_INDEX_URL:-https://pypi.org/simple} uv sync ${UV_EXTRAS:+--extra $UV_EXTRAS}"
 
+# Install ReadabiliPy's bundled Node deps (@mozilla/readability, jsdom, minimist).
+# uv sync does not run the package's `npm install`, so the JS extractor's
+# `require('@mozilla/readability')` fails at runtime without this step. The
+# resulting node_modules dir ships inside the venv copied to the runtime stage.
+RUN cd /app/backend/.venv/lib/python3.12/site-packages/readabilipy/javascript \
+    && npm install --omit=dev --no-audit --no-fund
+
 # UTF-8 locale prevents UnicodeEncodeError on Chinese/emoji content in minimal
 # containers where locale configuration may be missing and the default encoding is not UTF-8.
 ENV LANG=C.UTF-8
