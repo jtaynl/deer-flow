@@ -662,6 +662,73 @@ docker run --rm -e PGSSLMODE=require postgres:16-alpine \
       GRANT ALL ON SCHEMA public TO public;"
 ```
 
+## Safety termination handling
+
+Upstream commit `be0eae98` (merged 2026-05-22) added
+`SafetyFinishReasonMiddleware` to intercept AIMessages where the provider
+stopped generation for safety reasons but still returned `tool_calls`.
+Without it, LangChain's tool router executes those half-truncated tool
+calls anyway (issue #3028) — the model says "I won't do this" while the
+agent silently runs the partial `write_file` it emitted before refusing.
+
+Built-in detectors cover:
+
+- **OpenAI-compatible** `finish_reason='content_filter'` — DeepSeek, Kimi,
+  Qwen (DashScope), OpenRouter, etc.
+- **Anthropic** `stop_reason='refusal'`
+- **Gemini** `finish_reason` in
+  `SAFETY` / `BLOCKLIST` / `PROHIBITED_CONTENT` / `SPII` / `RECITATION` /
+  `IMAGE_SAFETY`
+
+**Default config — middleware is ON, no action needed:**
+
+```yaml
+safety_finish_reason:
+  enabled: true        # default true
+  # detectors: null    # default null = use the built-in set
+```
+
+When safety termination fires, the middleware:
+
+- Clears structured `tool_calls` AND raw `additional_kwargs.tool_calls`/`function_call`
+- Preserves `response_metadata.finish_reason` for downstream observers
+- Stamps `additional_kwargs.safety_termination` for trace observability
+- Appends a user-facing explanation to the message content
+- Emits a `safety_termination` custom SSE event (live UIs reconcile any "tool starting…" indicator)
+- Records a `middleware:safety_termination` row in `run_events` (offline audit)
+
+**Audit query — which runs got safety-suppressed:**
+
+```sql
+SELECT run_id, created_at, content::json->>'changes' AS details
+FROM run_events
+WHERE event_type = 'middleware:safety_termination'
+ORDER BY created_at DESC
+LIMIT 20;
+```
+
+Tool *arguments* are deliberately excluded from the journal (the very text
+the provider filtered would defeat the audit's purpose); the row records
+the detector, the reason value, suppressed tool names/ids, and the
+message_id.
+
+**Customisation — extending the OpenAI detector for non-standard tokens:**
+
+```yaml
+safety_finish_reason:
+  enabled: true
+  detectors:
+    - use: deerflow.agents.middlewares.safety_termination_detectors:OpenAICompatibleContentFilterDetector
+      config:
+        finish_reasons: ["content_filter", "sensitive", "risk_control"]
+    - use: deerflow.agents.middlewares.safety_termination_detectors:AnthropicRefusalDetector
+    - use: deerflow.agents.middlewares.safety_termination_detectors:GeminiSafetyDetector
+```
+
+Providing a `detectors:` list fully **overrides** the built-in set — to
+disable the middleware entirely, use `enabled: false` instead of an empty
+list.
+
 ## MCP servers
 
 The runtime gateway image bakes Microsoft's [`@playwright/mcp`](https://github.com/microsoft/playwright-mcp)
