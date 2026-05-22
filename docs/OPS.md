@@ -354,6 +354,28 @@ These aren't required for a working deployment but are improvements
 discovered during production hardening. They're separate from the gotchas
 above because the upstream defaults work — these are just better.
 
+### Temperature for research/analysis workloads (0.7 → 0.5)
+
+The upstream `config.example.yaml` sets `temperature: 0.7` on every model
+— a generic "creative but coherent" default tuned for chatbot breadth,
+not for factual synthesis. For workloads dominated by deep research,
+analysis, or forecasting, lower temperatures (0.3-0.5) reduce
+hallucination by keeping the sampler on high-confidence completions.
+
+The effect is muted on reasoning-enabled models — most of the sampling
+diversity happens inside the thinking chain, and the final answer is
+closer to deterministic regardless. (Anthropic deprecated `temperature`
+entirely on Opus 4.7 for exactly this reason — see the Claude tuning
+section above.) But the marginal accuracy gain is still real, and the
+cost is nil.
+
+This deployment runs `temperature: 0.5` across all four active models
+(`deepseek-v4-pro`, `kimi-k2.6`, `qwen3.6-plus`, `qwen3.7-max`) since
+2026-05-22. If outputs start feeling flat or repetitive, bump back to
+0.6-0.7 — there's no harm in iterating. The commented example blocks
+in `config.yaml` for disabled models (Gemini, Claude, vLLM templates)
+remain at the upstream 0.7 default as reference.
+
 ### Jina `web_fetch` timeout (10 → 30)
 
 The upstream `config.example.yaml` sets `timeout: 10` for the Jina reader
