@@ -560,14 +560,26 @@ counts (102/145/171/270/125) across the conversation. Unlike DeepSeek,
 DashScope does not require `reasoning_content` echoed back on
 subsequent turns, so no `PatchedChatQwen` wrapper is needed.
 
-**Tier choice — `-plus` vs `-max-preview`:**
+**Tier / generation choice:**
 
-- `qwen3.6-plus` (used above) — stable production tag, mid-tier, faster
-  and cheaper. Recommended default.
-- `qwen3.6-max-preview` — newer top-tier model but a `-preview` slug:
+- `qwen3.6-plus` (used above) — 3.6-generation mid-tier, stable
+  production slug, faster and cheaper. Recommended default.
+- `qwen3.6-max-preview` — 3.6 top-tier model but a `-preview` slug:
   Alibaba may rename or remove it without warning. Pin a dated suffix
-  (e.g. `qwen3-max-2026-01-23`) if you want the heaviest model with
+  (e.g. `qwen3-max-2026-01-23`) if you want the heaviest 3.6 model with
   long-term slug stability.
+- `qwen3.7-max` — newest top-tier (announced 2026-05-20). 1M-token
+  context, AAII intel index 56.6 (+4.8 vs 3.6-max-preview), tuned for
+  long-horizon agent tasks. The DashScope intl slug is `qwen3.7-max`
+  **without** any `-preview` suffix (the `-preview` suffix is rejected
+  by the API as of 2026-05-22) and no dated snapshot is published yet.
+  Treat it as preview anyway — the slug can be renamed/removed
+  underneath you. Once a dated variant ships (e.g.
+  `qwen3.7-max-YYYY-MM-DD`), pin that instead. The block is identical
+  in shape to `qwen3.6-plus` above — same `use:`, same `base_url`,
+  same `enable_thinking` toggle. Verified end-to-end on this fork
+  2026-05-22: model responds, returns `reasoning_content` and
+  `completion_tokens_details.reasoning_tokens`.
 
 Either way, the international DashScope endpoint
 (`dashscope-intl.aliyuncs.com`) is what's used here; the mainland-China
