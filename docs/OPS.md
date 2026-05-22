@@ -348,6 +348,41 @@ make down && make up
     # expect: /app/backend/.venv/.../node_modules/@mozilla/readability/index.js
     ```
 
+17. **Managed Postgres resize / failover invalidates the gateway's psycopg
+    connection pool.** When the DB host is resized (e.g. DO managed
+    Postgres tier change), maintenance-restarted, or fails over, existing
+    TCP connections from the gateway are dropped server-side. The
+    gateway's psycopg async pool does **not** auto-recycle dropped
+    connections — it hands stale handles to the next request, which then
+    raise `psycopg.OperationalError: the connection is closed`. Symptoms:
+
+    - `/api/threads/{id}/history` and other DB-backed endpoints start
+      returning HTTP 500 right after a Postgres maintenance event.
+    - Gateway logs show repeated
+      `psycopg.OperationalError: the connection is closed` tracebacks.
+    - `/api/health` keeps returning the auth challenge fine (no DB
+      call), so naive uptime checks don't catch this.
+
+    Fix: a plain Docker restart of the gateway is enough — no rebuild,
+    no compose down. The image is unchanged; only the in-process
+    connection pool needs to be re-created.
+
+    ```bash
+    sg docker -c 'docker restart deer-flow-gateway'
+    ```
+
+    Verification:
+
+    ```bash
+    sg docker -c 'docker logs --since 2m deer-flow-gateway 2>&1 \
+      | grep -iE "connection is closed|connection|error" | tail -5'
+    # expect: empty (no stale connection errors)
+    ```
+
+    The Langchain checkpointer (which also uses psycopg) auto-recovers
+    on the next checkpoint write, but the gateway's app-level pool does
+    not — hence the asymmetric failure mode.
+
 ## Tuning recommendations
 
 These aren't required for a working deployment but are improvements
