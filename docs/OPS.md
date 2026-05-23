@@ -411,6 +411,41 @@ This deployment runs `temperature: 0.5` across all four active models
 in `config.yaml` for disabled models (Gemini, Claude, vLLM templates)
 remain at the upstream 0.7 default as reference.
 
+### Summarization trigger (15564 → 32000)
+
+Upstream raised the default `summarization.trigger.tokens` from 15564 to
+32000 in commit `a64a39db` (before v2.0-m1). For research, analysis, and
+forecasting workloads on models with ≥32K context windows, the higher
+threshold is unambiguously better:
+
+- Summarization is a **lossy** operation — it compresses verbatim content
+  into a summary, which means downstream tool calls can no longer quote
+  exact passages from the source material.
+- 15564 tokens (~12k words) fires summarization aggressively early.
+  Research threads that pull a few full articles via `web_fetch` cross
+  that line quickly, then operate on compressed memory for the rest of
+  the run.
+- 32000 tokens (~24k words) roughly doubles the verbatim retention
+  window before compression. Models with 32K+ contexts (all four active
+  on this fork) handle that easily.
+
+Bump both fields together so the summarization input budget stays sized
+to the trigger threshold:
+
+```yaml
+summarization:
+  trigger:
+    - type: tokens
+      value: 32000          # was 15564
+  trim_tokens_to_summarize: 32000  # was 15564
+```
+
+`summarization.*` is hot-reloadable per `CLAUDE.md`, but the
+single-file bind-mount inode pin (gotcha #14) means a config edit via
+write-and-rename effectively requires `make down && make up` to land.
+Trade-off: slightly higher per-run token spend; meaningfully better
+citation fidelity in long research threads.
+
 ### Jina `web_fetch` timeout (10 → 30)
 
 The upstream `config.example.yaml` sets `timeout: 10` for the Jina reader
