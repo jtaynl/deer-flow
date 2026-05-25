@@ -168,17 +168,6 @@ async def _write_upload_file_with_limits(
         raise
     else:
         fh.close()
-        # Gateway runs as root (uid 0); the AIO sandbox /v1/shell/exec
-        # endpoint runs the agent's shell commands as `gem` (uid 1000).
-        # The default umask leaves uploaded files mode 0600 root-owned,
-        # which the sandbox can't read — agents see "Permission denied"
-        # on /mnt/user-data/uploads/* and resort to `sudo cp` workarounds.
-        # Forcing 0644 makes uploads world-readable so the sandbox user
-        # can read them directly.
-        try:
-            os.chmod(file_path, 0o644)
-        except OSError:
-            pass  # best-effort; don't fail uploads if chmod fails (e.g. non-POSIX FS)
     return file_path, file_size, total_size
 
 
