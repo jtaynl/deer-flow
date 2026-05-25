@@ -299,12 +299,18 @@ make down && make up
     which works but burns turns and triggers the audit middleware's
     medium-risk warning on every upload.
 
-    This fork carries a small patch in
-    `backend/app/gateway/routers/uploads.py` that `chmod 0644`s every
-    uploaded file after write, so the sandbox user can read them
-    directly with no sudo. If you're rebuilding this deployment on a
-    different host or branch where the patch isn't present, either
-    cherry-pick that patch or run as a one-off remediation:
+    **Upstream fix landed 2026-05-25 in `f9b70713`** — adds a
+    `_make_file_sandbox_readable()` helper (sets `S_IRGRP | S_IROTH`
+    on every uploaded file) and a `SandboxProvider.needs_upload_permission_adjustment`
+    attribute so the local-filesystem provider can opt out cleanly.
+    Any deployment current with upstream `main` (or any merge after
+    `f9b70713`) gets this automatically — no local patch required.
+    The previous `fix(uploads): chmod uploaded files to 0644` patch
+    on this fork is now redundant; commit `f83611f1` removed our
+    inline duplicate after the merge.
+
+    For older deployments still on a pre-`f9b70713` snapshot, the
+    one-off remediation that fixes already-uploaded files is:
 
     ```bash
     sg docker -c 'docker exec deer-flow-gateway sh -c \
@@ -867,14 +873,23 @@ Expect two JSON-RPC response lines — an `initialize` ack with
 ## Local patches currently carried on `local-fixes`
 
 Run `git log --oneline upstream/main..local-fixes` for the current list.
-The only runtime hotfix currently carrying is `fix(uploads): chmod uploaded
-files to 0644 so sandbox user can read`, which is described under gotcha #15
-above. The rest are branding/UI tweaks and docs.
+**Zero runtime hotfixes are currently carrying** — both previous bug
+patches have been absorbed upstream:
 
-The previous `fix(task_tool): handle AsyncCallbackManager in _find_usage_recorder`
-hotfix was absorbed upstream on 2026-05-21 (the merge into `e93f6584`
-introduced an equivalent `isinstance(BaseCallbackManager)` check). The
-commit remains in history but the file content now matches upstream.
+- `fix(task_tool): handle AsyncCallbackManager in _find_usage_recorder`
+  was absorbed on 2026-05-21 (merge into `e93f6584` introduced an
+  equivalent `isinstance(BaseCallbackManager)` check).
+- `fix(uploads): chmod uploaded files to 0644 so sandbox user can read`
+  was absorbed on 2026-05-25 (upstream `f9b70713` added
+  `_make_file_sandbox_readable()` plus a clean `SandboxProvider`
+  opt-out attribute; our follow-up `f83611f1` removed the now-redundant
+  inline chmod).
+
+The original commits remain in history but the file contents now match
+upstream. Everything else still on `local-fixes` vs `upstream/main` is
+UI/branding/i18n tweaks plus two Dockerfile additions (readabilipy
+node-deps install, Playwright MCP + chromium baking) — none are
+behavior fixes, they're capability additions for this deployment.
 
 ## Maintainer hygiene
 
