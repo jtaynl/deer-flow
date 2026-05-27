@@ -389,6 +389,31 @@ make down && make up
     on the next checkpoint write, but the gateway's app-level pool does
     not — hence the asymmetric failure mode.
 
+18. **`DEER_FLOW_INTERNAL_AUTH_TOKEN` must be shared across gateway
+    workers.** As of upstream #3184 (merged 2026-05-27), the gateway
+    requires a stable internal auth token so channel workers handled by
+    one Uvicorn worker can call internal APIs served by another. The
+    canonical workflow is `scripts/deploy.sh`, which auto-generates the
+    token and persists it to `$DEER_FLOW_HOME/.internal-auth-token` (or
+    reuses an existing one). Symptoms of a missing or non-shared token:
+    `403`/`401` on internal `/api/...` calls when channel workers fan
+    out across multiple Uvicorn workers.
+
+    If running `docker compose` directly without `deploy.sh`, you must
+    set `DEER_FLOW_INTERNAL_AUTH_TOKEN` yourself (e.g.,
+    `export DEER_FLOW_INTERNAL_AUTH_TOKEN=$(openssl rand -hex 32)`) —
+    otherwise each worker process generates its own and inter-worker
+    requests fail authentication.
+
+19. **MCP HTTP/SSE transports cannot be session-pooled.** As of upstream
+    #3203 (merged 2026-05-27), only `transport: stdio` MCP servers are
+    wrapped with persistent-session logic. HTTP/SSE servers are returned
+    unwrapped because their internal anyio TaskGroups can't be closed
+    from a different async task — pooling them previously caused
+    `anyioRuntimeError` on cleanup. If you add an HTTP/SSE MCP entry to
+    `extensions_config.json` and see those errors, the fix is now
+    automatic; no config change needed.
+
 ## Tuning recommendations
 
 These aren't required for a working deployment but are improvements
@@ -873,7 +898,7 @@ Expect two JSON-RPC response lines — an `initialize` ack with
 ## Local patches currently carried on `local-fixes`
 
 Run `git log --oneline upstream/main..local-fixes` for the current list.
-**Zero runtime hotfixes are currently carrying** — both previous bug
+**Zero runtime hotfixes are currently carrying** — all previous bug
 patches have been absorbed upstream:
 
 - `fix(task_tool): handle AsyncCallbackManager in _find_usage_recorder`
@@ -884,6 +909,17 @@ patches have been absorbed upstream:
   `_make_file_sandbox_readable()` plus a clean `SandboxProvider`
   opt-out attribute; our follow-up `f83611f1` removed the now-redundant
   inline chmod).
+
+Most recent upstream sync: **2026-05-27** absorbed 6 commits cleanly
+(no conflicts on our overlap-risk paths — `backend/Dockerfile`,
+`backend/packages/harness/deerflow/mcp/`, `backend/app/gateway/routers/uploads.py`):
+
+- `162fb214` fix(mcp): skip session pooling for HTTP/SSE transports — see gotcha #19
+- `b00749a8` fix(auth): share internal gateway token across workers — see gotcha #18
+- `92905e9e` fix(todo): reuse thread state schema
+- `e344be8d` feat(tests): add Blockbuster runtime gate for event-loop blocking IO
+- `da41701f` Add static blocking IO inventory (script + tests)
+- `e0280194` chore: add a pull request template
 
 The original commits remain in history but the file contents now match
 upstream. Everything else still on `local-fixes` vs `upstream/main` is
