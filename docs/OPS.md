@@ -435,9 +435,9 @@ entirely on Opus 4.7 for exactly this reason — see the Claude tuning
 section above.) But the marginal accuracy gain is still real, and the
 cost is nil.
 
-This deployment runs `temperature: 0.5` across all four active models
-(`deepseek-v4-pro`, `kimi-k2.6`, `qwen3.6-plus`, `qwen3.7-max`) since
-2026-05-22. If outputs start feeling flat or repetitive, bump back to
+This deployment runs `temperature: 0.5` across all five active models
+(`deepseek-v4-pro`, `kimi-k2.6`, `qwen3.6-plus`, `qwen3.7-max`,
+`mimo-v2.5-pro`) since 2026-05-22 (MiMo added 2026-05-28). If outputs start feeling flat or repetitive, bump back to
 0.6-0.7 — there's no harm in iterating. The commented example blocks
 in `config.yaml` for disabled models (Gemini, Claude, vLLM templates)
 remain at the upstream 0.7 default as reference.
@@ -708,6 +708,51 @@ Either way, the international DashScope endpoint
 (`dashscope-intl.aliyuncs.com`) is what's used here; the mainland-China
 endpoint (`dashscope.aliyuncs.com`) needs a different key. The two are
 not interchangeable.
+
+### MiMo (Xiaomi) via `PatchedChatMiMo` adapter
+
+Xiaomi's MiMo reasoning model family (mimo-v2.5-pro, mimo-v2.5, mimo-v2-pro,
+mimo-v2-omni, mimo-v2-flash) returns `reasoning_content` in thinking mode and
+**requires that field to be replayed on historical assistant messages** in
+multi-turn agent/tool-call conversations. Standard `langchain_openai.ChatOpenAI`
+drops the provider-specific field, causing HTTP 400 errors once tool calls
+enter the conversation history. Upstream provides a dedicated adapter:
+
+```yaml
+- name: mimo-v2.5-pro
+  display_name: MiMo V2.5 Pro
+  use: deerflow.models.patched_mimo:PatchedChatMiMo
+  model: mimo-v2.5-pro
+  api_key: $MIMO_API_KEY
+  base_url: https://api.xiaomimimo.com/v1
+  request_timeout: 600.0
+  max_retries: 2
+  max_tokens: 8192
+  temperature: 0.5
+  supports_thinking: true
+  supports_vision: false
+  when_thinking_enabled:
+    extra_body:
+      thinking:
+        type: enabled
+  when_thinking_disabled:
+    extra_body:
+      thinking:
+        type: disabled
+```
+
+Endpoint selection by key prefix:
+- `sk-...` keys (pay-as-you-go) → `https://api.xiaomimimo.com/v1`
+- `tp-...` keys (Token Plan, regional) → `https://token-plan-cn.xiaomimimo.com/v1` (or other regional Token Plan URL)
+
+Verified end-to-end 2026-05-28: API call returned both `content` and
+`reasoning_content` fields with `completion_tokens_details.reasoning_tokens`
+set, confirming thinking mode and the adapter wire-up.
+
+`PatchedChatMiMo` is model-id agnostic — use the same `use:` line for every
+MiMo thinking model entry, including subagent model overrides. The adapter
+upstream PR was #3298 (merged 2026-05-28); requires this fork to be
+current with that commit or later.
 
 ### Persistence config block (full reference)
 
