@@ -910,9 +910,15 @@ patches have been absorbed upstream:
   opt-out attribute; our follow-up `f83611f1` removed the now-redundant
   inline chmod).
 
-Most recent upstream sync: **2026-05-27** absorbed 6 commits cleanly
-(no conflicts on our overlap-risk paths — `backend/Dockerfile`,
-`backend/packages/harness/deerflow/mcp/`, `backend/app/gateway/routers/uploads.py`):
+Most recent upstream sync: **2026-05-28** absorbed 4 commits cleanly
+(no conflicts on overlap-risk paths):
+
+- `a5599c10` fix(gateway): honour `on_disconnect` on `/wait` endpoints — fixes resource leak when a `/api/threads/.../wait` client disconnects mid-request (relevant for downstream pipelines that call `wait` endpoints)
+- `3cb75887` fix(memory): parse wrapped memory update JSON responses
+- `37451500` fix(gateway): split `stream_existing_run` into per-method routes for unique OpenAPI operationIds — internal refactor, URL paths unchanged
+- `9e332c59` chore(deps): bump frontend `uuid` 10.0.0 → 14.0.0
+
+Prior sync (**2026-05-27**) absorbed 6 commits:
 
 - `162fb214` fix(mcp): skip session pooling for HTTP/SSE transports — see gotcha #19
 - `b00749a8` fix(auth): share internal gateway token across workers — see gotcha #18
