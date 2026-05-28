@@ -910,8 +910,18 @@ patches have been absorbed upstream:
   opt-out attribute; our follow-up `f83611f1` removed the now-redundant
   inline chmod).
 
-Most recent upstream sync: **2026-05-28** absorbed 4 commits cleanly
-(no conflicts on overlap-risk paths):
+Most recent upstream sync: **2026-05-28 (later)** absorbed 7 more commits
+cleanly (no conflicts on overlap-risk paths):
+
+- `2ace78d1` fix(frontend): surface backend detail when agent name check fails
+- `8330b244` docs: add blocking IO detection usage and maintenance (`backend/docs/BLOCKING_IO_DETECTION.md`)
+- `44677c5e` **feat(provider): add patched MiMo reasoning content support** — new model adapter for Xiaomi's MiMo reasoning model, with thinking-content stripping. `config.example.yaml` includes sample entry; not added to active config in this deployment
+- `2fdfff0d` fix(frontend): Mermaid preview failure in historical messages
+- `737abc0e` fix(api-client): ignore stale run reconnect conflicts (SSE)
+- `8decfd32` Fix custom skill install permissions (mostly test coverage)
+- `02872407` fix(frontend): show new thread in sidebar immediately on creation
+
+Earlier sync (**2026-05-28**) absorbed 4 commits:
 
 - `a5599c10` fix(gateway): honour `on_disconnect` on `/wait` endpoints — fixes resource leak when a `/api/threads/.../wait` client disconnects mid-request (relevant for downstream pipelines that call `wait` endpoints)
 - `3cb75887` fix(memory): parse wrapped memory update JSON responses
