@@ -61,7 +61,7 @@ export const enUS: Translations = {
   // Welcome
   welcome: {
     greeting: "Hello, again!",
-    description: "Welcome to 🤖 super agent.",
+    description: "Welcome to WRI AI.",
 
     createYourOwnSkill: "Create Your Own Skill",
     createYourOwnSkillDescription:
@@ -255,7 +255,7 @@ export const enUS: Translations = {
 
   // Page titles (document title)
   pages: {
-    appName: "🤖",
+    appName: "WRI AI",
     chats: "Chats",
     newChat: "New chat",
     untitled: "Untitled",
@@ -349,7 +349,7 @@ export const enUS: Translations = {
   // Settings
   settings: {
     title: "Settings",
-    description: "Adjust how DeerFlow looks and behaves for you.",
+    description: "Adjust how WRI AI looks and behaves for you.",
     sections: {
       account: "Account",
       appearance: "Appearance",

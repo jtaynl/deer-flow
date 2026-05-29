@@ -61,7 +61,7 @@ export const zhCN: Translations = {
   // Welcome
   welcome: {
     greeting: "你好，欢迎回来！",
-    description: "Welcome to 🤖 super agent.",
+    description: "欢迎使用 WRI AI。",
 
     createYourOwnSkill: "创建你自己的 Agent SKill",
     createYourOwnSkillDescription:
@@ -243,7 +243,7 @@ export const zhCN: Translations = {
 
   // Page titles (document title)
   pages: {
-    appName: "🤖",
+    appName: "WRI AI",
     chats: "对话",
     newChat: "新对话",
     untitled: "未命名",
@@ -333,7 +333,7 @@ export const zhCN: Translations = {
   // Settings
   settings: {
     title: "设置",
-    description: "根据你的偏好调整 DeerFlow 的界面和行为。",
+    description: "根据你的偏好调整 WRI AI 的界面和行为。",
     sections: {
       account: "账号",
       appearance: "外观",
