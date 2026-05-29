@@ -955,8 +955,15 @@ patches have been absorbed upstream:
   opt-out attribute; our follow-up `f83611f1` removed the now-redundant
   inline chmod).
 
-Most recent upstream sync: **2026-05-29 (late)** absorbed 1 commit cleanly
+Most recent upstream sync: **2026-05-29 (overnight)** absorbed 4 commits cleanly
 (no overlap with local patches):
+
+- `ca487578` feat(agent): add `ToolOutputBudgetMiddleware` for oversized tool output protection (#3303) — new opt-in middleware that caps per-tool-call output size, externalising oversized results to a thread-local `.tool-results/` dir (model can re-read via `read_file` with offset/limit), with head+tail truncation fallback. Adds new config keys under `tool_output:` in `config.example.yaml` (+30 lines) — not enabled in our `config.yaml`; safe to ignore until we want to tune.
+- `4093c833` refactor(provider): share assistant payload replay matching (#3307) — pulls the common replay matching out of `patched_mimo.py`, `patched_deepseek.py`, `patched_openai.py` into a shared `assistant_payload_replay.py`. **Also fixes a `reasoning_content` silently-dropped bug** when an earlier assistant message is reordered/dropped during serialization — directly relevant since we run MiMo (5th active model) and DeepSeek paths exercise this hot.
+- `052b1e21` test(runtime): Blockbuster runtime anchor for `JsonlRunEventStore` async IO (#3313) — test-only; locks `put`, `put_batch`, `list_messages`, `list_events`, etc. under the Blockbuster gate so any reintroduced blocking IO fails CI.
+- `e8e9edcb` fix(channels): ignore hidden control messages when extracting replies (#3219) (#3270) — channel reply extraction now skips internal control messages; backend non-overlap.
+
+Earlier 2026-05-29 (late) sync absorbed 1 commit:
 
 - `e683ed6a` fix(runtime): guide malformed write_file recovery (#3040) — runtime middleware tweak that teaches the dangling-tool-call middleware how to redirect the model after a malformed `write_file` call. Touches `backend/agents/middlewares/dangling_tool_call_middleware.py` (+25/-2) and its test (+19). No config or API surface change.
 
