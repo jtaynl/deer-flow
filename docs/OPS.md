@@ -955,9 +955,12 @@ patches have been absorbed upstream:
   opt-out attribute; our follow-up `f83611f1` removed the now-redundant
   inline chmod).
 
-Most recent upstream sync: **2026-05-29 (evening)** absorbed 1 commit cleanly
-(MCP path touched but only docstring/comment-level — no overlap with
-historic local patches):
+Most recent upstream sync: **2026-05-29 (late)** absorbed 1 commit cleanly
+(no overlap with local patches):
+
+- `e683ed6a` fix(runtime): guide malformed write_file recovery (#3040) — runtime middleware tweak that teaches the dangling-tool-call middleware how to redirect the model after a malformed `write_file` call. Touches `backend/agents/middlewares/dangling_tool_call_middleware.py` (+25/-2) and its test (+19). No config or API surface change.
+
+Earlier 2026-05-29 (evening) sync absorbed 1 commit:
 
 - `872079b8` docs: clean standalone LangGraph server remnants (#3301) — removes references to a deprecated standalone-LangGraph-server deployment mode. We run embedded LangGraph (gateway-hosted), so no operational impact. Touches `backend/docs/AUTH_TEST_PLAN.md`, `backend/CLAUDE.md`, `backend/app/gateway/routers/mcp.py` (7 lines), `mcp/cache.py` (3 lines), new `test_gateway_runtime_cleanup.py`, and `frontend/.env.example`.
 
