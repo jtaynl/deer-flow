@@ -955,7 +955,12 @@ patches have been absorbed upstream:
   opt-out attribute; our follow-up `f83611f1` removed the now-redundant
   inline chmod).
 
-Most recent upstream sync: **2026-05-28 (later)** absorbed 7 more commits
+Most recent upstream sync: **2026-05-29** absorbed 1 commit cleanly
+(no conflicts on overlap-risk paths):
+
+- `d46a5779` fix(chat): preserve messages after summarization (#3280) — relevant for long research threads where summarization fires at our raised 32K trigger; prior bug could silently drop post-summary messages from chat history
+
+Prior sync **2026-05-28 (later)** absorbed 7 commits
 cleanly (no conflicts on overlap-risk paths):
 
 - `2ace78d1` fix(frontend): surface backend detail when agent name check fails
