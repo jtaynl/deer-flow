@@ -955,8 +955,13 @@ patches have been absorbed upstream:
   opt-out attribute; our follow-up `f83611f1` removed the now-redundant
   inline chmod).
 
-Most recent upstream sync: **2026-05-29 (later)** absorbed 1 commit cleanly
-(no conflicts on overlap-risk paths):
+Most recent upstream sync: **2026-05-29 (evening)** absorbed 1 commit cleanly
+(MCP path touched but only docstring/comment-level — no overlap with
+historic local patches):
+
+- `872079b8` docs: clean standalone LangGraph server remnants (#3301) — removes references to a deprecated standalone-LangGraph-server deployment mode. We run embedded LangGraph (gateway-hosted), so no operational impact. Touches `backend/docs/AUTH_TEST_PLAN.md`, `backend/CLAUDE.md`, `backend/app/gateway/routers/mcp.py` (7 lines), `mcp/cache.py` (3 lines), new `test_gateway_runtime_cleanup.py`, and `frontend/.env.example`.
+
+Earlier 2026-05-29 (later) sync absorbed 1 commit:
 
 - `cbf8b194` fix(runtime): harden JSONL async I/O and DB put_batch thread validation (#3084) — hardens the run_events persistence layer. We use `run_events.backend: db` per config tuning, so the DB-side validation is the relevant part for us; the JSONL changes are precautionary for the other backend.
 
