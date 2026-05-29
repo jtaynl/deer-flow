@@ -56,7 +56,7 @@ export function Hero({ className }: { className?: string }) {
             asChild
             variant="outline"
             size="lg"
-            className="h-12 border-[#0a1628]/15 bg-white px-8 text-base font-medium text-[#0a1628] hover:border-[#0a1628]/30 hover:bg-[#faf7f2]"
+            className="h-12 border-[#0a1628]/15 bg-white px-8 text-base font-medium text-[#0a1628] hover:border-[#0a1628]/30 hover:bg-[#faf7f2] hover:text-[#0a1628]"
           >
             <Link href="#how-it-works">How it works</Link>
           </Button>
