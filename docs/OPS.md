@@ -955,8 +955,12 @@ patches have been absorbed upstream:
   opt-out attribute; our follow-up `f83611f1` removed the now-redundant
   inline chmod).
 
-Most recent upstream sync: **2026-05-29** absorbed 1 commit cleanly
+Most recent upstream sync: **2026-05-29 (later)** absorbed 1 commit cleanly
 (no conflicts on overlap-risk paths):
+
+- `cbf8b194` fix(runtime): harden JSONL async I/O and DB put_batch thread validation (#3084) — hardens the run_events persistence layer. We use `run_events.backend: db` per config tuning, so the DB-side validation is the relevant part for us; the JSONL changes are precautionary for the other backend.
+
+Earlier 2026-05-29 sync absorbed 1 commit:
 
 - `d46a5779` fix(chat): preserve messages after summarization (#3280) — relevant for long research threads where summarization fires at our raised 32K trigger; prior bug could silently drop post-summary messages from chat history
 
