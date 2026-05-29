@@ -26,13 +26,16 @@ export default async function AuthLayout({
       return <AuthProvider initialUser={null}>{children}</AuthProvider>;
     case "gateway_unavailable":
       return (
-        <div className="flex h-screen flex-col items-center justify-center gap-4">
-          <p className="text-muted-foreground">
-            Service temporarily unavailable.
+        <div className="relative flex min-h-screen flex-col items-center justify-center gap-4 bg-gradient-to-b from-[#fdf2f3] via-white to-[#fbf5ec] px-6 text-[#0a1628]">
+          <h2 className="text-xl font-semibold tracking-tight text-[#0a1628]">
+            Service temporarily unavailable
+          </h2>
+          <p className="max-w-md text-center text-sm text-[#4b5563]">
+            WRI AI is briefly unreachable. Please try again in a moment.
           </p>
           <Link
             href="/login"
-            className="bg-primary text-primary-foreground hover:bg-primary/90 rounded-md px-4 py-2 text-sm"
+            className="rounded-md bg-[#7b1e2b] px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#9a2a39]"
           >
             Retry
           </Link>

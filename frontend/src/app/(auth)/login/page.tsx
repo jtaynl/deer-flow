@@ -1,12 +1,11 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { FlickeringGrid } from "@/components/ui/flickering-grid";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/core/auth/AuthProvider";
 import { parseAuthError } from "@/core/auth/types";
@@ -20,13 +19,9 @@ function validateNextParam(next: string | null): string | null {
   if (!next) {
     return null;
   }
-
-  // Need start with / (relative path)
   if (!next.startsWith("/")) {
     return null;
   }
-
-  // Disallow protocol-relative URLs
   if (
     next.startsWith("//") ||
     next.startsWith("http://") ||
@@ -34,13 +29,9 @@ function validateNextParam(next: string | null): string | null {
   ) {
     return null;
   }
-
-  // Disallow URLs with different protocols (e.g., javascript:, data:, etc)
   if (next.includes(":") && !next.startsWith("/")) {
     return null;
   }
-
-  // Valid relative path
   return next;
 }
 
@@ -48,7 +39,6 @@ export default function LoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { isAuthenticated } = useAuth();
-  const { theme, resolvedTheme } = useTheme();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -56,7 +46,6 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // Get next parameter for validated redirect
   const nextParam = searchParams.get("next");
   const redirectPath = validateNextParam(nextParam) ?? "/workspace";
 
@@ -70,7 +59,6 @@ export default function LoginPage() {
   // Redirect to setup if the system has no users yet
   useEffect(() => {
     let cancelled = false;
-
     void fetch("/api/v1/auth/setup-status")
       .then((r) => r.json())
       .then((data: { needs_setup?: boolean }) => {
@@ -81,7 +69,6 @@ export default function LoginPage() {
       .catch(() => {
         // Ignore errors; user stays on login page
       });
-
     return () => {
       cancelled = true;
     };
@@ -108,7 +95,7 @@ export default function LoginPage() {
         method: "POST",
         headers,
         body,
-        credentials: "include", // Important: include HttpOnly cookie
+        credentials: "include",
       });
 
       if (!res.ok) {
@@ -118,7 +105,6 @@ export default function LoginPage() {
         return;
       }
 
-      // Both login and register set a cookie — redirect to workspace
       router.push(redirectPath);
     } catch {
       setError("Network error. Please try again.");
@@ -127,83 +113,124 @@ export default function LoginPage() {
     }
   };
 
-  const actualTheme = theme === "system" ? resolvedTheme : theme;
-
   return (
-    <div className="bg-background relative flex min-h-screen items-center justify-center overflow-x-hidden overflow-y-auto">
-      <FlickeringGrid
-        className="absolute inset-0 z-0 mask-[url(/images/deer.svg)] mask-size-[100vw] mask-center mask-no-repeat md:mask-size-[72vh]"
-        squareSize={4}
-        gridGap={4}
-        color={actualTheme === "dark" ? "white" : "black"}
-        maxOpacity={0.3}
-        flickerChance={0.25}
+    <div className="relative flex min-h-screen w-full items-center justify-center overflow-hidden bg-gradient-to-b from-[#fdf2f3] via-white to-[#fbf5ec] px-6 py-12 text-[#0a1628]">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 [background:radial-gradient(60%_60%_at_50%_0%,#fbf5ec_0%,transparent_70%)]"
       />
-      <div className="border-border/20 bg-background/5 w-full max-w-md space-y-6 rounded-3xl border p-8 backdrop-blur-sm">
-        <div className="text-center">
-          <h1 className="text-foreground font-serif text-3xl">DeerFlow</h1>
-          <p className="text-muted-foreground mt-2">
-            {isLogin ? "Sign in to your account" : "Create a new account"}
-          </p>
+      <div className="relative z-10 w-full max-w-md">
+        <Link
+          href="/"
+          className="mb-8 inline-flex items-center gap-3 transition-opacity hover:opacity-80"
+        >
+          <Image
+            src="/wri/android-chrome-192x192.png"
+            alt="World Research Institute"
+            width={40}
+            height={40}
+            className="rounded-sm"
+            priority
+          />
+          <div className="flex flex-col leading-tight">
+            <span className="text-base font-semibold tracking-tight text-[#0a1628]">
+              WRI AI
+            </span>
+            <span className="text-[10px] uppercase tracking-wider text-[#7b1e2b]">
+              World Research Institute
+            </span>
+          </div>
+        </Link>
+
+        <div className="rounded-2xl border border-[#e5e7eb] bg-white p-8 shadow-sm">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight text-[#0a1628]">
+              {isLogin ? "Sign in to WRI AI" : "Create your account"}
+            </h1>
+            <p className="mt-2 text-sm text-[#4b5563]">
+              {isLogin
+                ? "Continue your research where you left off."
+                : "Get started with conversational intelligence backed by WRI methodology."}
+            </p>
+          </div>
+
+          <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+            <div className="flex flex-col gap-1.5">
+              <label
+                htmlFor="email"
+                className="text-xs font-medium tracking-wide text-[#374151] uppercase"
+              >
+                Email
+              </label>
+              <Input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@example.com"
+                required
+                autoComplete="email"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label
+                htmlFor="password"
+                className="text-xs font-medium tracking-wide text-[#374151] uppercase"
+              >
+                Password
+              </label>
+              <Input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="•••••••"
+                required
+                minLength={isLogin ? 6 : 8}
+                autoComplete={isLogin ? "current-password" : "new-password"}
+              />
+            </div>
+
+            {error && (
+              <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {error}
+              </p>
+            )}
+
+            <Button
+              type="submit"
+              className="h-11 w-full bg-[#7b1e2b] text-base font-semibold text-white hover:bg-[#9a2a39]"
+              disabled={loading}
+            >
+              {loading
+                ? "Please wait…"
+                : isLogin
+                  ? "Sign In"
+                  : "Create Account"}
+            </Button>
+          </form>
+
+          <div className="mt-6 text-center text-sm text-[#4b5563]">
+            <button
+              type="button"
+              onClick={() => {
+                setIsLogin(!isLogin);
+                setError("");
+              }}
+              className="font-medium text-[#7b1e2b] underline-offset-4 hover:underline"
+            >
+              {isLogin
+                ? "Don't have an account? Sign up"
+                : "Already have an account? Sign in"}
+            </button>
+          </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-2">
-          <div className="flex flex-col space-y-1">
-            <label htmlFor="email" className="text-sm font-medium">
-              Email
-            </label>
-            <Input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
-              required
-            />
-          </div>
-          <div className="flex flex-col space-y-1">
-            <label htmlFor="password" className="text-sm font-medium">
-              Password
-            </label>
-            <Input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="•••••••"
-              required
-              minLength={isLogin ? 6 : 8}
-            />
-          </div>
-
-          {error && <p className="text-sm text-red-500">{error}</p>}
-
-          <Button type="submit" className="w-full" disabled={loading}>
-            {loading
-              ? "Please wait..."
-              : isLogin
-                ? "Sign In"
-                : "Create Account"}
-          </Button>
-        </form>
-
-        <div className="text-center text-sm">
-          <button
-            type="button"
-            onClick={() => {
-              setIsLogin(!isLogin);
-              setError("");
-            }}
-            className="text-blue-500 hover:underline"
+        <div className="mt-6 text-center text-xs text-[#6b7280]">
+          <Link
+            href="/"
+            className="font-medium text-[#4b5563] underline-offset-4 hover:text-[#0a1628] hover:underline"
           >
-            {isLogin
-              ? "Don't have an account? Sign up"
-              : "Already have an account? Sign in"}
-          </button>
-        </div>
-
-        <div className="text-muted-foreground text-center text-xs">
-          <Link href="/" className="hover:underline">
             ← Back to home
           </Link>
         </div>

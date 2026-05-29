@@ -1,11 +1,11 @@
 "use client";
 
+import Image from "next/image";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { FlickeringGrid } from "@/components/ui/flickering-grid";
 import { Input } from "@/components/ui/input";
 import { getCsrfHeaders } from "@/core/api/fetcher";
 import { useAuth } from "@/core/auth/AuthProvider";
@@ -13,20 +13,55 @@ import { parseAuthError } from "@/core/auth/types";
 
 type SetupMode = "loading" | "init_admin" | "change_password";
 
+function BrandHeader() {
+  return (
+    <Link
+      href="/"
+      className="mb-8 inline-flex items-center gap-3 transition-opacity hover:opacity-80"
+    >
+      <Image
+        src="/wri/android-chrome-192x192.png"
+        alt="World Research Institute"
+        width={40}
+        height={40}
+        className="rounded-sm"
+        priority
+      />
+      <div className="flex flex-col leading-tight">
+        <span className="text-base font-semibold tracking-tight text-[#0a1628]">
+          WRI AI
+        </span>
+        <span className="text-[10px] uppercase tracking-wider text-[#7b1e2b]">
+          World Research Institute
+        </span>
+      </div>
+    </Link>
+  );
+}
+
+function PageShell({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="relative flex min-h-screen w-full items-center justify-center overflow-hidden bg-gradient-to-b from-[#fdf2f3] via-white to-[#fbf5ec] px-6 py-12 text-[#0a1628]">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 [background:radial-gradient(60%_60%_at_50%_0%,#fbf5ec_0%,transparent_70%)]"
+      />
+      <div className="relative z-10 w-full max-w-md">{children}</div>
+    </div>
+  );
+}
+
 export default function SetupPage() {
   const router = useRouter();
   const { user, isAuthenticated } = useAuth();
-  const { theme, resolvedTheme } = useTheme();
   const [mode, setMode] = useState<SetupMode>("loading");
 
-  // --- Shared state ---
   const [email, setEmail] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // --- Change-password mode only ---
   const [currentPassword, setCurrentPassword] = useState("");
 
   useEffect(() => {
@@ -35,7 +70,6 @@ export default function SetupPage() {
     if (isAuthenticated && user?.needs_setup) {
       setMode("change_password");
     } else if (!isAuthenticated) {
-      // Check if the system has no users yet
       void fetch("/api/v1/auth/setup-status")
         .then((r) => r.json())
         .then((data: { needs_setup?: boolean }) => {
@@ -43,7 +77,6 @@ export default function SetupPage() {
           if (data.needs_setup) {
             setMode("init_admin");
           } else {
-            // System already set up and user is not logged in — go to login
             router.push("/login");
           }
         })
@@ -51,7 +84,6 @@ export default function SetupPage() {
           if (!cancelled) router.push("/login");
         });
     } else {
-      // Authenticated but needs_setup is false — already set up
       router.push("/workspace");
     }
 
@@ -60,8 +92,7 @@ export default function SetupPage() {
     };
   }, [isAuthenticated, user, router]);
 
-  // ── Init-admin handler ─────────────────────────────────────────────
-  const handleInitAdmin = async (e: React.SubmitEvent) => {
+  const handleInitAdmin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
 
@@ -76,10 +107,7 @@ export default function SetupPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({
-          email,
-          password: newPassword,
-        }),
+        body: JSON.stringify({ email, password: newPassword }),
       });
 
       if (!res.ok) {
@@ -97,8 +125,7 @@ export default function SetupPage() {
     }
   };
 
-  // ── Change-password handler ────────────────────────────────────────
-  const handleChangePassword = async (e: React.SubmitEvent) => {
+  const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
 
@@ -142,39 +169,34 @@ export default function SetupPage() {
     }
   };
 
-  const actualTheme = theme === "system" ? resolvedTheme : theme;
-
   if (mode === "loading") {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <p className="text-muted-foreground text-sm">Loading…</p>
-      </div>
+      <PageShell>
+        <p className="text-center text-sm text-[#6b7280]">Loading…</p>
+      </PageShell>
     );
   }
 
-  // ── Admin initialization form ──────────────────────────────────────
   if (mode === "init_admin") {
     return (
-      <div className="bg-background flex min-h-screen items-center justify-center">
-        <FlickeringGrid
-          className="absolute inset-0 z-0 mask-[url(/images/deer.svg)] mask-size-[100vw] mask-center mask-no-repeat md:mask-size-[72vh]"
-          squareSize={4}
-          gridGap={4}
-          color={actualTheme === "dark" ? "white" : "black"}
-          maxOpacity={0.3}
-          flickerChance={0.25}
-        />
-        <div className="border-border/20 bg-background/5 w-full max-w-md space-y-6 rounded-3xl border p-8 backdrop-blur-sm">
-          <div className="text-center">
-            <h1 className="font-serif text-3xl">DeerFlow</h1>
-            <p className="text-muted-foreground mt-2">Create admin account</p>
-            <p className="text-muted-foreground mt-1 text-xs">
+      <PageShell>
+        <BrandHeader />
+        <div className="rounded-2xl border border-[#e5e7eb] bg-white p-8 shadow-sm">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight text-[#0a1628]">
+              Create admin account
+            </h1>
+            <p className="mt-2 text-sm text-[#4b5563]">
               Set up the administrator account to get started.
             </p>
           </div>
-          <form onSubmit={handleInitAdmin} className="space-y-2">
-            <div className="flex flex-col space-y-1">
-              <label htmlFor="email" className="text-sm font-medium">
+
+          <form onSubmit={handleInitAdmin} className="mt-6 space-y-4">
+            <div className="flex flex-col gap-1.5">
+              <label
+                htmlFor="email"
+                className="text-xs font-medium tracking-wide text-[#374151] uppercase"
+              >
                 Email
               </label>
               <Input
@@ -184,25 +206,33 @@ export default function SetupPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
+                autoComplete="email"
               />
             </div>
-            <div className="flex flex-col space-y-1">
-              <label htmlFor="password" className="text-sm font-medium">
+            <div className="flex flex-col gap-1.5">
+              <label
+                htmlFor="password"
+                className="text-xs font-medium tracking-wide text-[#374151] uppercase"
+              >
                 Password
               </label>
               <Input
                 id="password"
                 type="password"
-                placeholder="Password (min. 8 characters)"
+                placeholder="At least 8 characters"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 required
                 minLength={8}
+                autoComplete="new-password"
               />
             </div>
-            <div className="flex flex-col space-y-1">
-              <label htmlFor="confirmPassword" className="text-sm font-medium">
-                Confirm Password
+            <div className="flex flex-col gap-1.5">
+              <label
+                htmlFor="confirmPassword"
+                className="text-xs font-medium tracking-wide text-[#374151] uppercase"
+              >
+                Confirm password
               </label>
               <Input
                 id="confirmPassword"
@@ -212,76 +242,125 @@ export default function SetupPage() {
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 required
                 minLength={8}
+                autoComplete="new-password"
               />
             </div>
-            {error && <p className="ms-1 text-sm text-red-500">{error}</p>}
-            <Button type="submit" className="w-full" disabled={loading}>
+            {error && (
+              <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {error}
+              </p>
+            )}
+            <Button
+              type="submit"
+              className="h-11 w-full bg-[#7b1e2b] text-base font-semibold text-white hover:bg-[#9a2a39]"
+              disabled={loading}
+            >
               {loading ? "Creating account…" : "Create Admin Account"}
             </Button>
           </form>
         </div>
-      </div>
+      </PageShell>
     );
   }
 
-  // ── Change-password form (needs_setup after login) ─────────────────
   return (
-    <div className="bg-background flex min-h-screen items-center justify-center">
-      <FlickeringGrid
-        className="absolute inset-0 z-0 mask-[url(/images/deer.svg)] mask-size-[100vw] mask-center mask-no-repeat md:mask-size-[72vh]"
-        squareSize={4}
-        gridGap={4}
-        color={actualTheme === "dark" ? "white" : "black"}
-        maxOpacity={0.3}
-        flickerChance={0.25}
-      />
-      <div className="border-border/20 bg-background/5 w-full max-w-md space-y-6 rounded-3xl border p-8 backdrop-blur-sm">
-        <div className="text-center">
-          <h1 className="font-serif text-3xl">DeerFlow</h1>
-          <p className="text-muted-foreground mt-2">
-            Complete admin account setup
-          </p>
-          <p className="text-muted-foreground mt-1 text-xs">
-            Set your real email and a new password.
+    <PageShell>
+      <BrandHeader />
+      <div className="rounded-2xl border border-[#e5e7eb] bg-white p-8 shadow-sm">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-[#0a1628]">
+            Complete account setup
+          </h1>
+          <p className="mt-2 text-sm text-[#4b5563]">
+            Set your real email and a new password before continuing.
           </p>
         </div>
-        <form onSubmit={handleChangePassword} className="space-y-4">
-          <Input
-            type="email"
-            placeholder="Your email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-          />
-          <Input
-            type="password"
-            placeholder="Current password"
-            value={currentPassword}
-            onChange={(e) => setCurrentPassword(e.target.value)}
-            required
-          />
-          <Input
-            type="password"
-            placeholder="New password"
-            value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
-            required
-            minLength={8}
-          />
-          <Input
-            type="password"
-            placeholder="Confirm new password"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            required
-            minLength={8}
-          />
-          {error && <p className="text-sm text-red-500">{error}</p>}
-          <Button type="submit" className="w-full" disabled={loading}>
+
+        <form onSubmit={handleChangePassword} className="mt-6 space-y-4">
+          <div className="flex flex-col gap-1.5">
+            <label
+              htmlFor="newEmail"
+              className="text-xs font-medium tracking-wide text-[#374151] uppercase"
+            >
+              Email
+            </label>
+            <Input
+              id="newEmail"
+              type="email"
+              placeholder="you@example.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              autoComplete="email"
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label
+              htmlFor="currentPassword"
+              className="text-xs font-medium tracking-wide text-[#374151] uppercase"
+            >
+              Current password
+            </label>
+            <Input
+              id="currentPassword"
+              type="password"
+              placeholder="Current password"
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+              required
+              autoComplete="current-password"
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label
+              htmlFor="newPassword"
+              className="text-xs font-medium tracking-wide text-[#374151] uppercase"
+            >
+              New password
+            </label>
+            <Input
+              id="newPassword"
+              type="password"
+              placeholder="At least 8 characters"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              required
+              minLength={8}
+              autoComplete="new-password"
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label
+              htmlFor="confirmNewPassword"
+              className="text-xs font-medium tracking-wide text-[#374151] uppercase"
+            >
+              Confirm new password
+            </label>
+            <Input
+              id="confirmNewPassword"
+              type="password"
+              placeholder="Confirm new password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              required
+              minLength={8}
+              autoComplete="new-password"
+            />
+          </div>
+          {error && (
+            <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {error}
+            </p>
+          )}
+          <Button
+            type="submit"
+            className="h-11 w-full bg-[#7b1e2b] text-base font-semibold text-white hover:bg-[#9a2a39]"
+            disabled={loading}
+          >
             {loading ? "Setting up…" : "Complete Setup"}
           </Button>
         </form>
       </div>
-    </div>
+    </PageShell>
   );
 }

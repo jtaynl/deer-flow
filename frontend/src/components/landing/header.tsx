@@ -1,116 +1,94 @@
-import { StarFilledIcon, GitHubLogoIcon } from "@radix-ui/react-icons";
+import Image from "next/image";
 import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
-import { NumberTicker } from "@/components/ui/number-ticker";
 import type { Locale } from "@/core/i18n/locale";
-import { getI18n } from "@/core/i18n/server";
-import { env } from "@/env";
 import { cn } from "@/lib/utils";
 
 export type HeaderProps = {
   className?: string;
+  // Accepted for legacy compatibility with blog/docs layouts; WRI header is
+  // always English and always points to "/" for home.
   homeURL?: string;
   locale?: Locale;
 };
 
-export async function Header({ className, homeURL, locale }: HeaderProps) {
-  const isExternalHome = !homeURL;
-  const { locale: resolvedLocale, t } = await getI18n(locale);
-  const lang = resolvedLocale.substring(0, 2);
+export function Header({ className }: HeaderProps) {
   return (
     <header
       className={cn(
-        "container-md fixed top-0 right-0 left-0 z-20 mx-auto flex h-16 items-center justify-between backdrop-blur-xs",
+        "fixed top-0 right-0 left-0 z-30 mx-auto flex h-16 items-center justify-between border-b border-[#e5e7eb] bg-white/80 backdrop-blur-md",
         className,
       )}
     >
-      <div className="flex items-center gap-6">
-        <a
-          href={homeURL ?? "https://github.com/bytedance/deer-flow"}
-          target={isExternalHome ? "_blank" : "_self"}
-          rel={isExternalHome ? "noopener noreferrer" : undefined}
-        >
-          <h1 className="font-serif text-xl">DeerFlow</h1>
-        </a>
-      </div>
-      <nav className="mr-8 ml-auto flex items-center gap-8 text-sm font-medium">
+      <div className="container-md mx-auto flex w-full items-center justify-between px-6">
         <Link
-          href={`/${lang}/docs`}
-          className="text-secondary-foreground hover:text-foreground transition-colors"
+          href="/"
+          className="flex items-center gap-3 transition-opacity hover:opacity-80"
         >
-          {t.home.docs}
+          <Image
+            src="/wri/android-chrome-192x192.png"
+            alt="World Research Institute"
+            width={36}
+            height={36}
+            className="rounded-sm"
+            priority
+          />
+          <div className="flex flex-col leading-tight">
+            <span className="text-base font-semibold tracking-tight text-[#0a1628]">
+              WRI AI
+            </span>
+            <span className="text-[10px] uppercase tracking-wider text-[#7b1e2b]">
+              World Research Institute
+            </span>
+          </div>
         </Link>
-        <Link
-          href="/blog/posts"
-          className="text-secondary-foreground hover:text-foreground transition-colors"
-        >
-          {t.home.blog}
-        </Link>
-      </nav>
-      <div className="relative">
-        <div
-          className="pointer-events-none absolute inset-0 z-0 h-full w-full rounded-full opacity-30 blur-2xl"
-          style={{
-            background: "linear-gradient(90deg, #ff80b5 0%, #9089fc 100%)",
-            filter: "blur(16px)",
-          }}
-        />
-        <Button
-          variant="outline"
-          size="sm"
-          asChild
-          className="group relative z-10"
-        >
+
+        <nav className="hidden items-center gap-8 text-sm font-medium text-[#4b5563] md:flex">
+          <Link
+            href="#capabilities"
+            className="transition-colors hover:text-[#0a1628]"
+          >
+            Capabilities
+          </Link>
+          <Link
+            href="#how-it-works"
+            className="transition-colors hover:text-[#0a1628]"
+          >
+            How it works
+          </Link>
+          <Link
+            href="#trust"
+            className="transition-colors hover:text-[#0a1628]"
+          >
+            Why WRI AI
+          </Link>
           <a
-            href="https://github.com/bytedance/deer-flow"
+            href="https://www.worldresearch.org/insights/"
             target="_blank"
             rel="noopener noreferrer"
+            className="transition-colors hover:text-[#0a1628]"
           >
-            <GitHubLogoIcon className="size-4" />
-            Star on GitHub
-            {env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY === "true" &&
-              env.GITHUB_OAUTH_TOKEN && <StarCounter />}
+            Insights ↗
           </a>
-        </Button>
+        </nav>
+
+        <div className="flex items-center gap-3">
+          <Link
+            href="/workspace"
+            className="hidden text-sm font-medium text-[#4b5563] transition-colors hover:text-[#0a1628] sm:inline-block"
+          >
+            Sign In
+          </Link>
+          <Button
+            asChild
+            size="sm"
+            className="bg-[#7b1e2b] text-white hover:bg-[#9a2a39]"
+          >
+            <Link href="/workspace">Start Research</Link>
+          </Button>
+        </div>
       </div>
-      <hr className="from-border/0 via-border/70 to-border/0 absolute top-16 right-0 left-0 z-10 m-0 h-px w-full border-none bg-linear-to-r" />
     </header>
-  );
-}
-
-async function StarCounter() {
-  let stars = 10000; // Default value
-
-  try {
-    const response = await fetch(
-      "https://api.github.com/repos/bytedance/deer-flow",
-      {
-        headers: env.GITHUB_OAUTH_TOKEN
-          ? {
-              Authorization: `Bearer ${env.GITHUB_OAUTH_TOKEN}`,
-              "Content-Type": "application/json",
-            }
-          : {},
-        next: {
-          revalidate: 3600,
-        },
-      },
-    );
-
-    if (response.ok) {
-      const data = await response.json();
-      stars = data.stargazers_count ?? stars; // Update stars if API response is valid
-    }
-  } catch (error) {
-    console.error("Error fetching GitHub stars:", error);
-  }
-  return (
-    <>
-      <StarFilledIcon className="size-4 transition-colors duration-300 group-hover:text-yellow-500" />
-      {stars && (
-        <NumberTicker className="font-mono tabular-nums" value={stars} />
-      )}
-    </>
   );
 }
