@@ -955,7 +955,12 @@ patches have been absorbed upstream:
   opt-out attribute; our follow-up `f83611f1` removed the now-redundant
   inline chmod).
 
-Most recent upstream sync: **2026-05-29 (overnight)** absorbed 4 commits cleanly
+Most recent upstream sync: **2026-05-30** absorbed 1 commit cleanly
+(no overlap with local patches):
+
+- `9f3be2a9` fix(agents): offload `UploadsMiddleware` uploads scan off the event loop (#3311) — adds an `abefore_agent` async hook so the per-message uploads-directory scan (`exists`/`iterdir`/`stat` + sibling `.md` outline reads) runs in a worker thread via `run_in_executor` instead of blocking the asyncio loop. Copies the current context so `get_effective_user_id()` still resolves correctly. Relevant for any thread with an uploads dir. Touches `backend/packages/harness/deerflow/agents/middlewares/uploads_middleware.py` (+14), new `tests/blocking_io/test_uploads_middleware.py` (+56), plus 9 lines of docs.
+
+Earlier 2026-05-29 (overnight) sync absorbed 4 commits cleanly
 (no overlap with local patches):
 
 - `ca487578` feat(agent): add `ToolOutputBudgetMiddleware` for oversized tool output protection (#3303) — new opt-in middleware that caps per-tool-call output size, externalising oversized results to a thread-local `.tool-results/` dir (model can re-read via `read_file` with offset/limit), with head+tail truncation fallback. Adds new config keys under `tool_output:` in `config.example.yaml` (+30 lines) — not enabled in our `config.yaml`; safe to ignore until we want to tune.
