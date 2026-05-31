@@ -955,8 +955,13 @@ patches have been absorbed upstream:
   opt-out attribute; our follow-up `f83611f1` removed the now-redundant
   inline chmod).
 
-Most recent upstream sync: **2026-05-30** absorbed 1 commit cleanly
+Most recent upstream sync: **2026-05-31** absorbed 2 commits cleanly
 (no overlap with local patches):
+
+- `79cc2279` fix(middleware): fix LLM fallback run status (#3321) — corrects how `llm_error_handling_middleware` reports run status during model fallback, and optimises maker extraction in the streaming path. **Mildly relevant** since LGI Stage 1 exercises the qwen3.6-plus → qwen3.7-max fallback path, so cleaner status reporting helps batch-summary attribution. Touches `llm_error_handling_middleware.py` (+44/-5), runtime `journal.py` (+22), `worker.py` (+88), plus tests.
+- `46ddc346` fix(channels): preserve Feishu clarification thread continuity (#3285) — Feishu-specific channel work. Irrelevant to this deployment (no Feishu integration). Touches `backend/app/channels/feishu.py` (+197), `manager.py` (+65), `message_bus.py` (+3), plus tests.
+
+Earlier 2026-05-30 sync absorbed 1 commit cleanly:
 
 - `9f3be2a9` fix(agents): offload `UploadsMiddleware` uploads scan off the event loop (#3311) — adds an `abefore_agent` async hook so the per-message uploads-directory scan (`exists`/`iterdir`/`stat` + sibling `.md` outline reads) runs in a worker thread via `run_in_executor` instead of blocking the asyncio loop. Copies the current context so `get_effective_user_id()` still resolves correctly. Relevant for any thread with an uploads dir. Touches `backend/packages/harness/deerflow/agents/middlewares/uploads_middleware.py` (+14), new `tests/blocking_io/test_uploads_middleware.py` (+56), plus 9 lines of docs.
 
