@@ -945,8 +945,13 @@ patches have been absorbed upstream:
   opt-out attribute; our follow-up `f83611f1` removed the now-redundant
   inline chmod).
 
-Most recent upstream sync: **2026-06-01 (later)** absorbed 1 commit cleanly
-— **directly retires gotcha #17** (psycopg stale-connection):
+Most recent upstream sync: **2026-06-01 (latest)** absorbed 1 commit cleanly
+(no overlap with local patches):
+
+- `019bd16a` fix: load paginated run history messages (#3305) — fixes message loading for paginated run history. Adds `backend/app/gateway/pagination.py`, tweaks `routers/runs.py` and `routers/thread_runs.py`, and rewires `frontend/src/core/threads/hooks.ts` (+86) and `types.ts` to fetch + merge paginated message pages. No conflict with our WRI rebrand (rebrand touches `landing/`, `workspace/`, `(auth)/`, `i18n/`; pagination touches `core/threads/`).
+
+Earlier 2026-06-01 (later) sync absorbed 1 commit cleanly
+— **directly retired gotcha #17** (psycopg stale-connection):
 
 - `031d6fbc` fix(checkpointer): use `AsyncConnectionPool` for postgres to prevent stale connection errors (#3223) (#3226) — replaces `AsyncPostgresSaver.from_conn_string()` with an explicit `AsyncConnectionPool` that has `check_connection` enabled, plus TCP keepalive probes on each connection. Dead idle connections are now detected and replaced on checkout instead of raising `psycopg.OperationalError: the connection is closed`. **Retires the manual `docker restart deer-flow-gateway` runbook step** after DO managed Postgres maintenance / resize / failover events. Touches `backend/.../runtime/checkpointer/async_provider.py` (+55/-12) and tests.
 
