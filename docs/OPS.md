@@ -354,40 +354,30 @@ make down && make up
     # expect: /app/backend/.venv/.../node_modules/@mozilla/readability/index.js
     ```
 
-17. **Managed Postgres resize / failover invalidates the gateway's psycopg
-    connection pool.** When the DB host is resized (e.g. DO managed
-    Postgres tier change), maintenance-restarted, or fails over, existing
-    TCP connections from the gateway are dropped server-side. The
-    gateway's psycopg async pool does **not** auto-recycle dropped
-    connections — it hands stale handles to the next request, which then
-    raise `psycopg.OperationalError: the connection is closed`. Symptoms:
+17. **~~Managed Postgres resize / failover invalidates the gateway's psycopg
+    connection pool.~~ RETIRED 2026-06-01** — fixed upstream by `031d6fbc`
+    (PR #3226). The gateway now uses `AsyncConnectionPool` with
+    `check_connection` + TCP keepalive, so dead idle connections are
+    detected and replaced on checkout. No more manual `docker restart
+    deer-flow-gateway` after DO Postgres maintenance / resize / failover.
 
-    - `/api/threads/{id}/history` and other DB-backed endpoints start
-      returning HTTP 500 right after a Postgres maintenance event.
-    - Gateway logs show repeated
-      `psycopg.OperationalError: the connection is closed` tracebacks.
-    - `/api/health` keeps returning the auth challenge fine (no DB
-      call), so naive uptime checks don't catch this.
+    Historical detail preserved below for reference if the symptom ever
+    recurs from a different cause:
 
-    Fix: a plain Docker restart of the gateway is enough — no rebuild,
-    no compose down. The image is unchanged; only the in-process
-    connection pool needs to be re-created.
-
-    ```bash
-    sg docker -c 'docker restart deer-flow-gateway'
-    ```
-
-    Verification:
-
-    ```bash
-    sg docker -c 'docker logs --since 2m deer-flow-gateway 2>&1 \
-      | grep -iE "connection is closed|connection|error" | tail -5'
-    # expect: empty (no stale connection errors)
-    ```
-
-    The Langchain checkpointer (which also uses psycopg) auto-recovers
-    on the next checkpoint write, but the gateway's app-level pool does
-    not — hence the asymmetric failure mode.
+    > When the DB host was resized (e.g. DO managed Postgres tier
+    > change), maintenance-restarted, or failed over, existing TCP
+    > connections from the gateway were dropped server-side. The
+    > gateway's psycopg async pool did **not** auto-recycle dropped
+    > connections — it handed stale handles to the next request, which
+    > then raised `psycopg.OperationalError: the connection is closed`.
+    > Symptoms were: HTTP 500 on `/api/threads/{id}/history` and other
+    > DB-backed endpoints right after a Postgres maintenance event;
+    > repeated `connection is closed` tracebacks in gateway logs;
+    > `/api/health` still 401'd fine (no DB call) so naive uptime checks
+    > didn't catch it. Manual fix was `docker restart deer-flow-gateway`
+    > (no rebuild — pool reinit only). The Langchain checkpointer
+    > auto-recovered on the next write; the app-level pool didn't —
+    > hence the asymmetric failure mode.
 
 18. **`DEER_FLOW_INTERNAL_AUTH_TOKEN` must be shared across gateway
     workers.** As of upstream #3184 (merged 2026-05-27), the gateway
@@ -955,8 +945,12 @@ patches have been absorbed upstream:
   opt-out attribute; our follow-up `f83611f1` removed the now-redundant
   inline chmod).
 
-Most recent upstream sync: **2026-06-01** absorbed 1 commit cleanly
-(no overlap with local patches):
+Most recent upstream sync: **2026-06-01 (later)** absorbed 1 commit cleanly
+— **directly retires gotcha #17** (psycopg stale-connection):
+
+- `031d6fbc` fix(checkpointer): use `AsyncConnectionPool` for postgres to prevent stale connection errors (#3223) (#3226) — replaces `AsyncPostgresSaver.from_conn_string()` with an explicit `AsyncConnectionPool` that has `check_connection` enabled, plus TCP keepalive probes on each connection. Dead idle connections are now detected and replaced on checkout instead of raising `psycopg.OperationalError: the connection is closed`. **Retires the manual `docker restart deer-flow-gateway` runbook step** after DO managed Postgres maintenance / resize / failover events. Touches `backend/.../runtime/checkpointer/async_provider.py` (+55/-12) and tests.
+
+Earlier 2026-06-01 sync absorbed 1 commit cleanly:
 
 - `d6a604d5` fix(makefile): extract setup-sandbox inline bash to script for Windows compatibility (#3326) — extracts the `setup-sandbox` target's inline bash from the `Makefile` into a standalone `scripts/setup-sandbox.sh` so it works under git-bash/WSL on Windows. Same behaviour, just refactored shape. No operational impact on this Linux deployment.
 
