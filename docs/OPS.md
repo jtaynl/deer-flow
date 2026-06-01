@@ -955,7 +955,12 @@ patches have been absorbed upstream:
   opt-out attribute; our follow-up `f83611f1` removed the now-redundant
   inline chmod).
 
-Most recent upstream sync: **2026-05-31** absorbed 2 commits cleanly
+Most recent upstream sync: **2026-06-01** absorbed 1 commit cleanly
+(no overlap with local patches):
+
+- `d6a604d5` fix(makefile): extract setup-sandbox inline bash to script for Windows compatibility (#3326) — extracts the `setup-sandbox` target's inline bash from the `Makefile` into a standalone `scripts/setup-sandbox.sh` so it works under git-bash/WSL on Windows. Same behaviour, just refactored shape. No operational impact on this Linux deployment.
+
+Earlier 2026-05-31 sync absorbed 2 commits cleanly
 (no overlap with local patches):
 
 - `79cc2279` fix(middleware): fix LLM fallback run status (#3321) — corrects how `llm_error_handling_middleware` reports run status during model fallback, and optimises maker extraction in the streaming path. **Mildly relevant** since LGI Stage 1 exercises the qwen3.6-plus → qwen3.7-max fallback path, so cleaner status reporting helps batch-summary attribution. Touches `llm_error_handling_middleware.py` (+44/-5), runtime `journal.py` (+22), `worker.py` (+88), plus tests.
