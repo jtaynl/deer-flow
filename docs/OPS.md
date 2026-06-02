@@ -945,7 +945,12 @@ patches have been absorbed upstream:
   opt-out attribute; our follow-up `f83611f1` removed the now-redundant
   inline chmod).
 
-Most recent upstream sync: **2026-06-01 (latest)** absorbed 1 commit cleanly
+Most recent upstream sync: **2026-06-02** absorbed 1 commit cleanly
+(docs-only, no operational impact):
+
+- `74e3e80c` docs: clean gateway runtime transition remnants (#3334) — docs cleanup touching `backend/docs/AUTH_TEST_DOCKER_GAP.md`, `backend/docs/AUTH_UPGRADE.md`, `docs/CODE_CHANGE_SUMMARY_BY_FILE.md`, plus +14 lines in `test_gateway_runtime_cleanup.py`. No code paths changed.
+
+Earlier 2026-06-01 (latest) sync absorbed 1 commit cleanly
 (no overlap with local patches):
 
 - `019bd16a` fix: load paginated run history messages (#3305) — fixes message loading for paginated run history. Adds `backend/app/gateway/pagination.py`, tweaks `routers/runs.py` and `routers/thread_runs.py`, and rewires `frontend/src/core/threads/hooks.ts` (+86) and `types.ts` to fetch + merge paginated message pages. No conflict with our WRI rebrand (rebrand touches `landing/`, `workspace/`, `(auth)/`, `i18n/`; pagination touches `core/threads/`).
