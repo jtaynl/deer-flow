@@ -945,7 +945,13 @@ patches have been absorbed upstream:
   opt-out attribute; our follow-up `f83611f1` removed the now-redundant
   inline chmod).
 
-Most recent upstream sync: **2026-06-02** absorbed 1 commit cleanly
+Most recent upstream sync: **2026-06-02 (later)** absorbed 2 commits cleanly
+(no overlap with local patches):
+
+- `5dc2d6cb` fix(sandbox): close `AioSandbox` HTTP client during provider teardown (#2872) (#3245) — **directly relevant to this 24/7 deployment**. Long-running services were leaking host-side sockets because the `httpx.Client` nested inside cached `AioSandbox` instances was never explicitly closed during `AioSandboxProvider.release/destroy/shutdown`. Two-stage fix: first attempt closed `wrapper.httpx_client` (which turned out to be the Fern wrapper without a `close()`), then a follow-up resolves the real `_client_wrapper.httpx_client.httpx_client` socket-owning client. Provider teardown now calls `close()` under a lock with use-after-close/double-close safety. Touches `community/aio_sandbox/aio_sandbox.py` (+52), `aio_sandbox_provider.py` (+33), tests +159. Should reduce slow socket accumulation in gateway over time.
+- `d9f47249` fix(tool-search): reliably hide deferred MCP schemas by removing the ContextVar (#3342) — major refactor: replaces `ContextVar`-based `DeferredToolRegistry` with closures + graph state (`ThreadState.promoted`, hash-scoped). Build the deferred catalog + tool_search per-agent from the policy-filtered tool list, pass `deferred_names`/`catalog_hash` explicitly to `DeferredToolFilterMiddleware` and the prompt, record promotions via a Command-returning `tool_search`. Removes `DeferredToolRegistry` and `_registry_var`. Affects MCP-tool surfacing (we run Playwright MCP). Net +1006/-1265 across 21 files including new dedicated tests.
+
+Earlier 2026-06-02 sync absorbed 1 commit cleanly
 (docs-only, no operational impact):
 
 - `74e3e80c` docs: clean gateway runtime transition remnants (#3334) — docs cleanup touching `backend/docs/AUTH_TEST_DOCKER_GAP.md`, `backend/docs/AUTH_UPGRADE.md`, `docs/CODE_CHANGE_SUMMARY_BY_FILE.md`, plus +14 lines in `test_gateway_runtime_cleanup.py`. No code paths changed.
