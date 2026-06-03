@@ -945,7 +945,18 @@ patches have been absorbed upstream:
   opt-out attribute; our follow-up `f83611f1` removed the now-redundant
   inline chmod).
 
-Most recent upstream sync: **2026-06-03 (later)** absorbed 2 commits cleanly
+Most recent upstream sync: **2026-06-03 (latest)** absorbed 6 commits cleanly
+— pre-merge `git merge-tree` simulation confirmed the whole batch auto-merges
+to a single conflict-free tree; redeploy needed (frontend + backend ship in image):
+
+- `9a53f9df` fix(frontend): preserve chronological order of thread history after context compression (#3354) — **genuine fix for us.** `core/threads/hooks.ts`: forward iteration restores chronological order after compression + a bounded (cap-5) auto-continue past empty/summarized runs. Directly relevant since we run `DeerFlowSummarizationMiddleware` — fixes user-visible out-of-order / blank history after compression. Merged byte-identical to upstream (file is purely upstream-tracked; our rebrand never touched `core/threads/`).
+- `8fca56cf` fix(mcp): accept `transport` field as alias for `type` (#3238) — purely additive alias in `extensions_config.py`; only fires when `transport` present AND `type` absent. Our Playwright `"type": "stdio"` config is untouched and still valid.
+- `3fddc24c` chore: remove stale LangGraph server runtime remnants (#3344) — drops `EXPOSE 2024` from both Dockerfile stages (doc-only metadata for the standalone LangGraph server we don't run; gateway listens on 8001) + a stale `@-rm -rf backend/.langgraph_api` from `make clean`. **Verified our readabilipy (Dockerfile:57) + Playwright MCP/chromium (Dockerfile:95-102) additions survived intact** — upstream's edits were 13+ lines away.
+- `0ffa995f` feat: upgrade MiniMax default model to M3 (#3357) — touches only `config.example.yaml` + MiniMax tests/docs. Our live `config.yaml` and active models (qwen/deepseek/claude/mimo) untouched; we don't use MiniMax. Inert.
+- `89ae74d4` fix(skills): surface offending line + quoting hint on SKILL.md YAML error (#3335) — error-message-only; never reached for a valid SKILL.md. Inert.
+- `0d0968a3` chore: add sandbox memory profiling tools (#3249) — unwired standalone kubectl-shelling script + docs; nothing imports it (we run embedded LangGraph, not k8s sandbox). Additive.
+
+Earlier 2026-06-03 (later) sync absorbed 2 commits cleanly
 — **`.github/`-only repo hygiene, no redeploy needed** (nothing ships in the image):
 
 - `f97b0c0f` feat(issue-templates): structured bug/feature issue forms (#3359) — replaces `runtime-information.yml` with `bug-report.yml` + `feature-request.yml` + `config.yml`.
