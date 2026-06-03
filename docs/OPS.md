@@ -945,7 +945,16 @@ patches have been absorbed upstream:
   opt-out attribute; our follow-up `f83611f1` removed the now-redundant
   inline chmod).
 
-Most recent upstream sync: **2026-06-02 (later)** absorbed 2 commits cleanly
+Most recent upstream sync: **2026-06-03** absorbed 1 commit cleanly
+(no overlap with local patches; pre-merge impact analysis run — see below):
+
+- `3ae82dc6` fix(mcp): add auth interceptor with channel user_id and keep header propagation to mcp tools (#3294) — touches `channels/manager.py`, `gateway/services.py`, `gateway/internal_auth.py`, `config/paths.py` (+20), `mcp/tools.py`, plus regression tests. Because it changes how `user_id` is normalised for filesystem paths, it got a 4-dimension impact analysis before merge (data-continuity / live-user-inventory / MCP-forwarding / channel-gateway-auth). Findings:
+  - **No data-continuity risk.** The new `make_safe_user_id()` helper in `config/paths.py` is purely additive and is **not** wired into the directory resolvers — `user_dir`/`thread_dir`/`host_thread_dir` still call `_validate_user_id` (returns the id verbatim). Its only production caller is `channels/manager.py:679` on the inbound-channel path, which this channel-free deployment never executes. Existing per-user dirs (`backend/.deer-flow/users/{default, <uuid>}/`) resolve to identical paths post-merge. No migration needed.
+  - **MCP forwarding inert for us.** Playwright is `stdio` with no OAuth/interceptors, so `tool_interceptors` is empty and the modified `base_handler` is never constructed; our calls take the unchanged `else` branch. Pure hardening.
+  - **`internal_auth.py`** = pure refactor (magic string `"internal"` → shared constant, identical value). **`services.py`** new branches are dead code for cookie-authenticated users (better-auth `system_role` is only `admin`/`user`, never `internal`).
+  - **Security-positive side effect:** a client-supplied `context.user_id` in a `/runs` body **cannot spoof** the authenticated user — `merge_run_context_overrides` uses `setdefault`, then `inject_authenticated_user_context` unconditionally overwrites with the server-authenticated id.
+
+Earlier 2026-06-02 (later) sync absorbed 2 commits cleanly
 (no overlap with local patches):
 
 - `5dc2d6cb` fix(sandbox): close `AioSandbox` HTTP client during provider teardown (#2872) (#3245) — **directly relevant to this 24/7 deployment**. Long-running services were leaking host-side sockets because the `httpx.Client` nested inside cached `AioSandbox` instances was never explicitly closed during `AioSandboxProvider.release/destroy/shutdown`. Two-stage fix: first attempt closed `wrapper.httpx_client` (which turned out to be the Fern wrapper without a `close()`), then a follow-up resolves the real `_client_wrapper.httpx_client.httpx_client` socket-owning client. Provider teardown now calls `close()` under a lock with use-after-close/double-close safety. Touches `community/aio_sandbox/aio_sandbox.py` (+52), `aio_sandbox_provider.py` (+33), tests +159. Should reduce slow socket accumulation in gateway over time.
