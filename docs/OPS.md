@@ -945,7 +945,13 @@ patches have been absorbed upstream:
   opt-out attribute; our follow-up `f83611f1` removed the now-redundant
   inline chmod).
 
-Most recent upstream sync: **2026-06-03** absorbed 1 commit cleanly
+Most recent upstream sync: **2026-06-03 (later)** absorbed 2 commits cleanly
+— **`.github/`-only repo hygiene, no redeploy needed** (nothing ships in the image):
+
+- `f97b0c0f` feat(issue-templates): structured bug/feature issue forms (#3359) — replaces `runtime-information.yml` with `bug-report.yml` + `feature-request.yml` + `config.yml`.
+- `aca7acc1` feat(ci): PR/issue auto-labeling + declarative label sync (#3360) — adds `labeler.yml`, `labels.yml` (29 labels), `scripts/sync_labels.py`, and 4 workflows (label-sync, pr-labeler, pr-triage, issue-triage). **Note:** merging+pushing to `jtaynl/deer-flow` may activate these GitHub Actions in the fork — `label-sync.yml` self-bootstraps the 29 labels on push to the default branch; triage workflows fire on PRs/issues. Harmless for this deployment fork (no external PRs/issues); the `pull_request_target` workflows never check out PR code (API metadata only). Disable Actions in fork settings if the noise is unwanted.
+
+Earlier 2026-06-03 sync absorbed 1 commit cleanly
 (no overlap with local patches; pre-merge impact analysis run — see below):
 
 - `3ae82dc6` fix(mcp): add auth interceptor with channel user_id and keep header propagation to mcp tools (#3294) — touches `channels/manager.py`, `gateway/services.py`, `gateway/internal_auth.py`, `config/paths.py` (+20), `mcp/tools.py`, plus regression tests. Because it changes how `user_id` is normalised for filesystem paths, it got a 4-dimension impact analysis before merge (data-continuity / live-user-inventory / MCP-forwarding / channel-gateway-auth). Findings:
