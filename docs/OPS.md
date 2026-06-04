@@ -945,7 +945,12 @@ patches have been absorbed upstream:
   opt-out attribute; our follow-up `f83611f1` removed the now-redundant
   inline chmod).
 
-Most recent upstream sync: **2026-06-03 (latest)** absorbed 6 commits cleanly
+Most recent upstream sync: **2026-06-04** absorbed 1 commit cleanly
+(no overlap with local patches; redeploy needed — backend ships in image):
+
+- `28b1da21` fix(agents): harden `update_agent` null-like args (#3237) — adds a pydantic `BeforeValidator` to the `update_agent` builtin tool that coerces literal string `"null"`/`"none"`/`"undefined"` into an actual `None`, across `soul`/`description`/`skills`/`tool_groups`/`model`. Plus a one-line lead-agent prompt note. Relevant since users customise agents via the workspace — prevents the model accidentally writing the literal string `"null"` into agent config. Purely defensive; no behaviour change for well-formed calls. Touches `tools/builtins/update_agent_tool.py` (+35/-9), `agents/lead_agent/prompt.py` (+1), plus tests.
+
+Earlier 2026-06-03 (latest) sync absorbed 6 commits cleanly
 — pre-merge `git merge-tree` simulation confirmed the whole batch auto-merges
 to a single conflict-free tree; redeploy needed (frontend + backend ship in image):
 
