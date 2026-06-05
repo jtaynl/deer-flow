@@ -908,6 +908,19 @@ needs no restart. The chromium binary is baked at build time, though, so
 **adding the dependency** (or bumping `PLAYWRIGHT_MCP_VERSION`) requires
 `make down && make up`.
 
+**Deferred-MCP-tool loading / `tool_search` is DISABLED here.** `config.yaml`
+sets `tool_search.enabled: false`, so the whole deferred-tool subsystem
+(the `tool_search` builtin, `DeferredToolFilterMiddleware`, `mcp_metadata`
+tagging, `ThreadState.promoted`) is a runtime no-op for this deployment —
+with a single Playwright MCP server, its tools load directly rather than
+being deferred behind a search tool. Practical consequence for syncs:
+upstream commits scoped to that subsystem (e.g. `d9f47249` #3342,
+`2bbc7879` #3370, and the earlier deferred-tool work) are **inert for us**
+and can be fast-tracked as low-priority once confirmed they don't touch
+the eager tool-load or MCP-tag-on-load path. Re-evaluate only if we ever
+flip `tool_search.enabled: true` (would be relevant only with many MCP
+servers/tools where context-window pressure justifies deferral).
+
 Quick sanity check that chromium launches and the MCP responds
 (independent of the gateway agent path):
 
@@ -945,7 +958,12 @@ patches have been absorbed upstream:
   opt-out attribute; our follow-up `f83611f1` removed the now-redundant
   inline chmod).
 
-Most recent upstream sync: **2026-06-04** absorbed 1 commit cleanly
+Most recent upstream sync: **2026-06-05** absorbed 1 commit cleanly
+(verified via merge-tree sim + behavioral analysis; inert for us — see MCP note):
+
+- `2bbc7879` refactor(tool-search): consolidate MCP metadata tag + harden deferred-tool setup (#3370) — follow-up to `d9f47249` (#3342). Adds `tools/mcp_metadata.py` as the single source of truth for the `"deerflow_mcp"` tag (dedup), and hardens `tool_search.search` against malformed model queries (empty/whitespace/bare-`+` now return `[]` instead of matching-everything or `IndexError`). Verified behavior-preserving: same tag string/predicate/call-sites, ranking + deferral gate untouched. **Doubly inert for us** — it's a behavior-preserving refactor *and* `tool_search.enabled: false` here so the whole subsystem is a runtime no-op (see "## MCP servers"). Merge-tree sim: clean (tree `c76cac69`, zero conflicts). Backend-only → redeployed to keep image in sync, though behavior is identical either way.
+
+Earlier 2026-06-04 sync absorbed 1 commit cleanly
 (no overlap with local patches; redeploy needed — backend ships in image):
 
 - `28b1da21` fix(agents): harden `update_agent` null-like args (#3237) — adds a pydantic `BeforeValidator` to the `update_agent` builtin tool that coerces literal string `"null"`/`"none"`/`"undefined"` into an actual `None`, across `soul`/`description`/`skills`/`tool_groups`/`model`. Plus a one-line lead-agent prompt note. Relevant since users customise agents via the workspace — prevents the model accidentally writing the literal string `"null"` into agent config. Purely defensive; no behaviour change for well-formed calls. Touches `tools/builtins/update_agent_tool.py` (+35/-9), `agents/lead_agent/prompt.py` (+1), plus tests.
