@@ -958,7 +958,14 @@ patches have been absorbed upstream:
   opt-out attribute; our follow-up `f83611f1` removed the now-redundant
   inline chmod).
 
-Most recent upstream sync: **2026-06-05** absorbed 1 commit cleanly
+Most recent upstream sync: **2026-06-06** absorbed 3 commits cleanly
+(verified via merge-tree sim + upload-contract behavioral analysis; tree `22122e74`, zero conflicts):
+
+- `1aac408d` fix upload file size contract (#3408) — **despite the name, NOT a max-size limit change.** It's a response data-type fix: the `size` field in upload/list API responses goes from JSON string (`"13"`) → integer (`13`), with proper Pydantic response models (`UploadedFileInfo`/`UploadListResponse`) replacing the buggy `list[dict[str,str]]` that forced size-stringification. **Limit enforcement unchanged** (50 MB/file, 100 MB total, 10 files, server-measured streaming, 413 errors). Our PDF/docx/xlsx doc-parsing pipeline is unaffected — the new `UploadedFileInfo` model explicitly whitelists our `markdown_file`/`markdown_path`/`markdown_virtual_path`/`markdown_artifact_url` fields, so stricter validation won't strip them; our frontend already types `size: number`. Touches `gateway/routers/uploads.py`, `client.py`, `uploads/manager.py`, `frontend/core/uploads/api.ts` (+`skipped_files` type), tests. **Reference (pre-existing, unchanged):** upload limits are `config.yaml`-configurable via an `uploads:` section (`max_file_size`/`max_total_size`/`max_files`), exposed at `GET /uploads/limits`; default per-file ceiling **50 MB** — relevant for large WRI report PDFs (override there if needed).
+- `9a5de8d6` fix(ux): remove Backspace shortcut for deleting prompt attachments (#3410) — frontend UX fix in `ai-elements/prompt-input.tsx` (−13). File is byte-identical to merge-base; our WRI rebrand never touched it. Removes an accidental-delete keybinding.
+- `dd8f9bf5` chore: AI-assistance disclosure in PR template + CONTRIBUTING (#3398) — `.github/` + `CONTRIBUTING.md` docs only. Inert.
+
+Earlier 2026-06-05 sync absorbed 1 commit cleanly
 (verified via merge-tree sim + behavioral analysis; inert for us — see MCP note):
 
 - `2bbc7879` refactor(tool-search): consolidate MCP metadata tag + harden deferred-tool setup (#3370) — follow-up to `d9f47249` (#3342). Adds `tools/mcp_metadata.py` as the single source of truth for the `"deerflow_mcp"` tag (dedup), and hardens `tool_search.search` against malformed model queries (empty/whitespace/bare-`+` now return `[]` instead of matching-everything or `IndexError`). Verified behavior-preserving: same tag string/predicate/call-sites, ranking + deferral gate untouched. **Doubly inert for us** — it's a behavior-preserving refactor *and* `tool_search.enabled: false` here so the whole subsystem is a runtime no-op (see "## MCP servers"). Merge-tree sim: clean (tree `c76cac69`, zero conflicts). Backend-only → redeployed to keep image in sync, though behavior is identical either way.
