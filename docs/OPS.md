@@ -958,7 +958,20 @@ patches have been absorbed upstream:
   opt-out attribute; our follow-up `f83611f1` removed the now-redundant
   inline chmod).
 
-Most recent upstream sync: **2026-06-07** absorbed 1 commit cleanly
+Most recent upstream sync: **2026-06-07 (later)** absorbed 6 commits cleanly
+(4-dimension triage + merge-tree sim; tree `2e95ab85`, zero conflicts; one both-sides
+file `lead_agent/prompt.py` auto-merged — kept our `<language>` block + upstream's edit):
+
+- `d8b728f7` fix(mcp): close stdio sessions on their owning loop to avoid cross-task cancel-scope error (#3379) — **fixes a bug our Playwright-stdio deployment can actually hit.** The embedded sync-tool path runs each MCP call via `asyncio.run` (fresh loop/task per call); session eviction then awaited the anyio `__aexit__` on a *different* task than opened it → `RuntimeError: Attempted to exit cancel scope in a different task`. +397 in `mcp/session_pool.py`. Backward-compatible for our single stdio server, hot-path latency unchanged, doesn't alter gotcha #19 (HTTP/SSE still unpooled), composes with the shutdown drain.
+- `d133b111` fix(summarization): tag summary LLM calls nostream (#2503) — stops phantom/duplicate streamed summary messages from our **enabled** summarization middleware. Model-agnostic (LangGraph `TAG_NOSTREAM` streaming tag, not a model API flag). **Does NOT change our 32K summarization trigger.**
+- `88e36d96` fix: prevent write_file streaming timeout on long reports (#3195) — **one behavior change worth knowing:** adds a **default-on 80 KB cap on single non-append `write_file` tool calls** (`sandbox/tools.py:55`, env-overridable via `DEERFLOW_WRITE_FILE_MAX_BYTES`, 0 disables). Oversized single-shot writes get a structured rejection steering the model to `append=True`/`str_replace`; lead-agent + general-purpose prompts updated to teach this. **The LGI pipeline is UNAFFECTED** — its stage scripts write via direct Python FS (`report.md` 208 KB / `data_tables.json` 456 KB bypass the agent tool). Also adds a 240s `stream_chunk_timeout` default — **only for `langchain_openai:ChatOpenAI`-path models** (qwen3.6-plus/qwen3.7-max/kimi); DeepSeek/MiMo stay on langchain's 60s unless `stream_chunk_timeout` is added to their `config.yaml` entry. Caps `StreamChunkTimeoutError` retries at 1.
+- `befe334f` fix(config): make the reload boundary discoverable from code (#3144) — introspection/docs only (new `config/reload_boundary.py` registry; `STARTUP_ONLY_FIELDS` = database/checkpointer/run_events/stream_bridge/sandbox/log_level/channels). **Does NOT change which keys hot-reload** — our `config.yaml`/`extensions_config.json` mtime reload is untouched.
+- `8d2e55a0` fix(subagent): structured subagent_status field over text parsing (#3146) — reporting/parsing only; subagent execution unchanged; frontend falls back to legacy prefix parsing for old threads. Backward-compatible for our general-purpose subagents.
+- `7679f21e` fix(frontend): truncate overflowing text in agent cards (#3391) — UI fix in `workspace/agents/agent-card.tsx`; no rebrand overlap (our rebrand touched workspace-header/workspace-container).
+
+**New optional config knobs (none required):** `DEERFLOW_WRITE_FILE_MAX_BYTES` (env; raise/disable the 80 KB agent-write_file cap) and per-model `stream_chunk_timeout` in `config.yaml`. Neither is currently set; defaults accepted.
+
+Earlier 2026-06-07 sync absorbed 1 commit cleanly
 (verified via merge-tree sim + drain-bounds/deploy-path analysis; tree `46b6f6ba`, zero conflicts)
 **+ 1 local compose hardening** (`stop_grace_period`):
 
