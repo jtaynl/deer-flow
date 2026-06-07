@@ -114,6 +114,13 @@ services:
     networks:
       - deer-flow
     restart: unless-stopped
+    # Lifespan shutdown runs two sequential bounded hooks — channel-stop (5s)
+    # then the in-flight-run drain (5s, upstream #3381) — summing to ~10s worst
+    # case. Docker's default SIGTERM grace is 10s, so a both-hooks-max teardown
+    # could brush the SIGKILL boundary and abort the drain mid-flight (the very
+    # PoolClosed/truncated-checkpoint case #3381 prevents). 30s keeps the drain
+    # comfortably inside grace on every redeploy.
+    stop_grace_period: 30s
 
   # ── Sandbox Provisioner (optional, Kubernetes mode) ────────────────────────
   provisioner:
