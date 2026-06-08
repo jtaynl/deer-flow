@@ -958,7 +958,19 @@ patches have been absorbed upstream:
   opt-out attribute; our follow-up `f83611f1` removed the now-redundant
   inline chmod).
 
-Most recent upstream sync: **2026-06-07 (later)** absorbed 6 commits cleanly
+Most recent upstream sync: **2026-06-08** absorbed 7 commits cleanly
+(4-dimension triage + merge-tree sim; tree `3e44f618`, zero conflicts; no fork divergence —
+every touched non-test file was byte-identical to merge-base):
+
+- `40a371b8` fix(security): harden MCP config endpoint (#3425) — **security improvement.** Adds an **admin-auth gate** (`system_role == "admin"`) on BOTH GET and PUT `/api/mcp/config`, plus a PUT-side stdio command allowlist (default `{npx, uvx}`, env-extensible via `DEER_FLOW_MCP_STDIO_COMMAND_ALLOWLIST`) that rejects path-separators/whitespace/shell-metachars. Secret-masking was already present (#2667). For our secret-less stdio Playwright (`env: {}`): GET masking is a no-op, PUT allowlist accepts `npx`. **The MCP config endpoint is now admin-only** — no practical impact (the WRI frontend never calls it, and we hand-maintain config files), but note it if any automation reads `/api/mcp/config` as a non-admin (would now 403).
+- `f725a963` fix(runtime): protect sync singleton init and reset (#3413) — adds `threading.Lock` around the **sync** checkpointer/store singleton accessors (double-checked locking, fixes a double-init/leaked-CM race). Our production runs the **async** `AsyncConnectionPool` path on `app.state` (from `031d6fbc`), which this does NOT touch; composes cleanly with the `268fdd69` shutdown drain (separate singletons). No new config. Latent/defensive for us.
+- `51920072` fix(middleware): offload memory injection off event loop / tiktoken blocking (#3402) — offloads tiktoken token-counting via `asyncio.to_thread` (5s bounded) + a startup `warm_tiktoken_cache()`; fixes a real cold-BPE-download event-loop-block risk (~26 min stall in network-restricted envs). **No memory content change.** Mostly latent for us (`memory.injection_enabled: false`), but the startup warm-up + date-injection offload still apply.
+- `64d923b0` fix(middleware): externalize oversized tool output for non-mounted sandboxes (#3417) — `ToolOutputBudgetMiddleware` IS enabled here (defaults; no `tool_output:` section), but our sandbox is **MOUNTED** (`AioSandboxProvider` → `LocalContainerBackend`, no `provisioner_url`), so the new non-mounted branch never fires — existing host-disk behavior unchanged.
+- `10c1d9f4` fix(search): DDGS Wikipedia region (#3423) — **no effect:** we use **Tavily** for web_search (DDG commented out); `image_search` uses a separate `ddgs.images()` path the fix doesn't touch.
+- `3b4c9ff7` fix(setup): LLM provider wizard defaults (#3421) — setup-wizard-only; inert (we hand-maintain `config.yaml`).
+- `88759015` test(e2e): record/replay front-back contract (#3365) — **test/CI infra only.** Adds `.github/workflows/replay-e2e.yml`, but it triggers on push to **`main`** + PRs (not `local-fixes`), so it **won't activate** on our normal ops push; no secrets required. Would only run if pushed onto `origin/main`.
+
+Earlier 2026-06-07 (later) sync absorbed 6 commits cleanly
 (4-dimension triage + merge-tree sim; tree `2e95ab85`, zero conflicts; one both-sides
 file `lead_agent/prompt.py` auto-merged — kept our `<language>` block + upstream's edit):
 
