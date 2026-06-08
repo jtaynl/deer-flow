@@ -958,7 +958,21 @@ patches have been absorbed upstream:
   opt-out attribute; our follow-up `f83611f1` removed the now-redundant
   inline chmod).
 
-Most recent upstream sync: **2026-06-08** absorbed 7 commits cleanly
+Most recent upstream sync: **2026-06-08 (later)** absorbed 8 commits cleanly
+(4-dimension triage + merge-tree sim; tree `975be3d2`, zero conflicts; **both local-patched
+files auto-merged** — `docker-compose.yaml` and `lead_agent/prompt.py`, see below):
+
+- `3c2b60aa` fix(threads): assign new checkpoint ID in update_thread_state (#2391) — **genuine correctness fix.** `update_thread_state` was re-`aput`ing with the *same* checkpoint id read from the latest snapshot → Postgres `ON CONFLICT DO UPDATE` **replaced** the row instead of appending, so thread-state history never grew (broke history/rewind/fork). Fix assigns a fresh time-ordered `uuid6`. Verified against the installed `langgraph-checkpoint-postgres` UPSERT SQL + the new regression test (23/23 pass). Composes with our `AsyncConnectionPool`. User-visible: editing thread state mid-conversation now appends a checkpoint instead of clobbering the latest.
+- `f92a26d5` fix(web_fetch): proxy for Jina reader in restricted networks (#3418) — opt-in proxy on DeerFlow's Jina `web_fetch`; **inert when unset** (our case): `trust_env=True` equals httpx's existing default → our web_fetch is byte-identical. **LGI Stage 2 unaffected** (`stage2_verify.py` builds its own httpx client, doesn't import DeerFlow's JinaClient). Adds `NO_PROXY`/`no_proxy` env to the gateway compose service (safe `${NO_PROXY:-}` → empty when unset). **This is the second edit to `docker/docker-compose.yaml` — it auto-merged with our `stop_grace_period` patch; both present** (NO_PROXY at L112-113 in the gateway `environment:`, `stop_grace_period: 30s` at L127).
+- `cd5bedaa` feat: MiniMax provider for image/video/podcast skills + music-generation (#3437) — MiniMax models/skills opt-in & unconfigured here → inert. **One all-deployments UX change:** `view_image_middleware` now tags the injected image-context message `hide_from_ui: True` — **the model still receives the full images**; it only stops the "Here are the images you've viewed:" bubble from rendering in the chat UI. Benign.
+- `3b105d1e` fix(suggestions): strip inline `<think>` before parsing follow-ups (#3435) — defensive; **not a fix we need** (MiMo/DeepSeek emit reasoning in a separate `reasoning_content` field, not inline `<think>`; default suggestions model is deepseek with thinking off). No required config.
+- `3b6dd0a4` feat(subagents): extend deferred MCP tool loading to subagents (#3432) — **inert** (gated behind `tool_search.enabled` = FALSE → no-op everywhere). The `prompt.py` edit is a function *relocation* (`get_deferred_tools_prompt_section` moved to `tools/builtins/tool_search.py`); **auto-merged with our `<language>` block, both preserved.**
+- `67ad6e23` fix(dev): exclude runtime state from gateway reload (#3426) — dev-mode `uvicorn --reload` watcher only; our prod gateway has no `--reload`. No-op for prod.
+- `799bef6d` fix(replay-e2e): match by conversation (#3436) — test/CI infra only (follow-up to `88759015`).
+
+**Both local patches survived the merge** with no manual resolution: `docker-compose.yaml` (our `stop_grace_period` + upstream's `NO_PROXY`) and `prompt.py` (our `<language>` block + upstream's relocation). The compose `NO_PROXY` is harmless on our host (var unset → expands to just the internal-hostnames exemption list).
+
+Earlier 2026-06-08 sync absorbed 7 commits cleanly
 (4-dimension triage + merge-tree sim; tree `3e44f618`, zero conflicts; no fork divergence —
 every touched non-test file was byte-identical to merge-base):
 
