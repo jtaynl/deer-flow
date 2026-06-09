@@ -958,7 +958,18 @@ patches have been absorbed upstream:
   opt-out attribute; our follow-up `f83611f1` removed the now-redundant
   inline chmod).
 
-Most recent upstream sync: **2026-06-08 (later)** absorbed 8 commits cleanly
+Most recent upstream sync: **2026-06-09** absorbed 5 commits cleanly
+(2-agent verify + merge-tree sim; tree `8cd654eb`, zero conflicts; no local-patch overlap):
+
+- `8db16bb3` fix(config): coerce null config.yaml list sections to empty list (#3434) — `app_config.py` `field_validator(mode="before")` coerces `None`→`[]` for `models`/`tools`/`tool_groups` + warns when no models configured. **No-op for our `config.yaml`** (well-formed lists: models=5, tools=10, tool_groups=4 — verified booting in the running container). Backward-compatible robustness fix, no new required config.
+- `0fb18e36` refactor(lead-agent): make `build_middlewares` public (#3458) — pure mechanical rename `_build_middlewares`→`build_middlewares` (drops a cross-module private import) + docstring. **Middleware list/order unchanged**; no behavior change. (Frontend `middlewares.mdx` 1-line docstring rename, no rebrand collision.)
+- `90e23bfd` fix(ci): consolidate PR/issue labeling into `triage.yml` (#3455) — `.github`-only; removes the labeler/issue-triage/pr-labeler/pr-triage workflows we synced in `aca7acc1` (upstream-tracked, no local edits) → single `triage.yml`. No image impact/redeploy. Dormant for our ops (fires on `pull_request_target`/issues, not `local-fixes` push).
+- `37337b77` feat(models): StepFun reasoning model adapter (#3461) — purely additive (`patched_stepfun.py` + commented `config.example.yaml`/`.env.example`). We don't use StepFun; `config.yaml` untouched. Inert.
+- `93e3281c` fix(dev): create backend/sandbox before uvicorn reload-exclude (#3459) — dev-mode `uvicorn --reload` only; our prod gateway has no `--reload`. No-op for prod.
+
+No local-patch overlap (none of the 5 touch Dockerfile, docker-compose.yaml, prompt.py, frontend rebrand, or config.yaml). Lowest-impact batch in a while — mostly robustness/refactor/CI/additive.
+
+Earlier 2026-06-08 (later) sync absorbed 8 commits cleanly
 (4-dimension triage + merge-tree sim; tree `975be3d2`, zero conflicts; **both local-patched
 files auto-merged** — `docker-compose.yaml` and `lead_agent/prompt.py`, see below):
 
