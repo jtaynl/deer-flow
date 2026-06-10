@@ -958,7 +958,19 @@ patches have been absorbed upstream:
   opt-out attribute; our follow-up `f83611f1` removed the now-redundant
   inline chmod).
 
-Most recent upstream sync: **2026-06-09** absorbed 5 commits cleanly
+Most recent upstream sync: **2026-06-10** absorbed 7 commits cleanly
+(4-dimension triage + merge-tree sim; tree `657641d8`, zero conflicts; `prompt.py` auto-merged —
+our `<language>` block + upstream's slash-skill section both preserved):
+
+- `16391e35` fix(skills): harden slash skill activation across chat channels (#3466) — **one all-entrypoints behavior change worth knowing.** Adds `SkillActivationMiddleware` to EVERY lead-agent turn (incl. our web UI). **Inert unless a user message starts with `/skill-name`** (strict regex; reserved words `help`/`memory`/`models`/`new`/`status`/`bootstrap` excluded). When triggered it injects the matching `SKILL.md` before the model call; since our `extensions_config.json` skills map is empty, a `/foo`-prefixed message returns "skill not found/disabled" instead of normal chat. **Normal non-slash chat is unaffected.** The channel-handler changes (slack/telegram/discord/feishu/etc) are inert (no channels configured).
+- `a57d05fe` fix(runtime): journal run lifecycle events (#3470) — fixes spurious per-node `run.end` events; only the root run now journals one `run.end` (adds the symmetric `parent_run_id` guard to `on_chain_end`). Cleans up our db-backed event stream. Authoritative run status (`worker.py set_status`) + the `268fdd69` drain unaffected.
+- `b62c5a7b` fix(agents): offload blocking FS IO in custom-agent router off the event loop (#3457) — wraps create/delete agent filesystem IO in `asyncio.to_thread`. We mount this router; same API outcomes (201/409/500), closes a small TOCTOU window. Benign responsiveness improvement.
+- `ae9e8bc0` fix(sandbox): missing `sandbox.mounts` host_path → loud ERROR (#3244) — **triple no-op for us:** just a `warning`→`error` log escalation (NOT a raise; skip-and-continue preserved, wrapped in a swallowing try/except), only in `LocalSandboxProvider` (we run `AioSandboxProvider`→`LocalContainerBackend`), and our `sandbox.mounts` is commented out. No startup risk.
+- `5b81588b` fix(frontend): fallback Streamdown clipboard copy (#3397) — touches `about-settings-page.tsx`/`memory-settings-page.tsx` but **no rebrand collision** (our About rewrite `b19d83cf` touched `about-content.ts`/`about.md`, different files); both settings pages had no local edits → adopt upstream cleanly.
+- `18bbb82f` Fix 'make dev' on Windows (#3236) — adds `backend/sitecustomize.py`, which **does auto-import in our prod** (backend/ on sys.path via `cd backend && PYTHONPATH=.`) but is **a verified Linux no-op** (only action is `if sys.platform != "win32": return`). serve.sh/wait-for-port.sh are dev-tooling.
+- `63ce88f8` fix(replay-e2e): key fixtures by caller (#3453) — test/CI/docs only.
+
+Earlier 2026-06-09 sync absorbed 5 commits cleanly
 (2-agent verify + merge-tree sim; tree `8cd654eb`, zero conflicts; no local-patch overlap):
 
 - `8db16bb3` fix(config): coerce null config.yaml list sections to empty list (#3434) — `app_config.py` `field_validator(mode="before")` coerces `None`→`[]` for `models`/`tools`/`tool_groups` + warns when no models configured. **No-op for our `config.yaml`** (well-formed lists: models=5, tools=10, tool_groups=4 — verified booting in the running container). Backward-compatible robustness fix, no new required config.
