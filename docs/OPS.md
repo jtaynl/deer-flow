@@ -958,7 +958,13 @@ patches have been absorbed upstream:
   opt-out attribute; our follow-up `f83611f1` removed the now-redundant
   inline chmod).
 
-Most recent upstream sync: **2026-06-10** absorbed 7 commits cleanly
+Most recent upstream sync: **2026-06-10 (later)** absorbed 1 commit (auth-sensitive — full 3-agent
+security triage before merge; clean, tree `23c74bea`) **+ 1 local security hardening**:
+
+- `2b795265` fix: align auth-disabled mode and mock history loading (#3471) — adds an **auth-disabled dev/e2e mode** (anonymous requests run as a synthetic admin `id=e2e-user`, `system_role=admin`) gated behind env `DEER_FLOW_AUTH_DISABLED=1` AND a production kill-switch. **We are auth-ENABLED and do NOT set that flag**, so all new branches are dead code for us — verified at runtime: `is_auth_disabled()` returns `False` and unauthenticated `/api/v1/auth/me` still returns 401. Adversarial review confirmed `auth_middleware.py` is a pure branch-order refactor preserving the enabled-path contract byte-for-byte (junk/expired cookie→401, no-cookie→401, internal-token preserved); `csrf`/`langgraph_auth`/`routers/auth` changes are gated no-ops when auth is enabled. One benign enabled-path delta: `deps.py` now short-circuits to `request.state.user` within a single request (dedups a redundant JWT-decode+DB-lookup; result-equivalent for sessions, no spoofing vector — only AuthMiddleware writes that state). Frontend `hooks.ts` (+55) is gated by `?mock=true`; real authenticated thread-history loading unchanged. Clean merge, no local-patch overlap.
+- **LOCAL HARDENING (`.env`):** set **`DEER_FLOW_ENV=production`**. This arms the upstream production kill-switch (`is_explicit_production_environment()`), so even if `DEER_FLOW_AUTH_DISABLED=1` were ever set on this box (accidentally or maliciously), auth-disabled mode + the synthetic-admin backdoor **cannot activate**. Verified safe before applying: `DEER_FLOW_ENV` is read in exactly 3 non-test places — the auth-disabled guard (intended) and two `inject_langfuse_metadata(environment=...)` trace-label calls (benign; just tags Langfuse traces `environment=production`, no behavior/feature/logging switch). Defense-in-depth only — auth-disabled was already off (flag absent). **Keep `DEER_FLOW_AUTH_DISABLED` absent and `DEER_FLOW_ENV=production` present.**
+
+Earlier 2026-06-10 sync absorbed 7 commits cleanly
 (4-dimension triage + merge-tree sim; tree `657641d8`, zero conflicts; `prompt.py` auto-merged —
 our `<language>` block + upstream's slash-skill section both preserved):
 
