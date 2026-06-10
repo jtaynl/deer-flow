@@ -404,6 +404,27 @@ make down && make up
     `extensions_config.json` and see those errors, the fix is now
     automatic; no config change needed.
 
+20. **`GATEWAY_WORKERS` must stay at 1 — do NOT raise it.** The gateway holds
+    run state **in-process and per-worker**: `RunManager._runs` (each run's
+    `asyncio.Task` + abort event) and the `MemoryStreamBridge` (per-run SSE
+    event log) live in one worker's memory, and there is **no shared
+    cross-worker stream bridge** (our config uses the memory backend; the
+    redis path is `NotImplementedError`). nginx round-robins with **no sticky
+    sessions**, so with >1 worker a cancel/reconnect/SSE request has a high
+    chance of landing on a worker that never saw the run → `cancel`/`join`
+    return **HTTP 409 "not active on this worker"**, and an SSE reconnect
+    subscribes to an empty stream and **emits only a 15s heartbeat, never an
+    END (reconnect hangs)**. We ran the `:-4` default (4 workers) until
+    **2026-06-10**, when upstream `05ae4467` (#3475) changed the compose
+    default to `${GATEWAY_WORKERS:-1}`; merging it dropped us to 1 worker and
+    eliminated the race (gateway memory fell ~662 MB → ~175 MB as a side
+    effect). **`GATEWAY_WORKERS` is intentionally unset in `.env`** so we take
+    that `:-1` default; a regression test (`test_compose_default_workers.py`)
+    pins it. Scale a single worker with **more CPU/RAM**, not more workers,
+    until upstream ships the shared stream bridge (tracked in #3191). The LGI
+    Stage-1 batch is unaffected by worker count (it uses `docker exec` →
+    embedded `DeerFlowClient`, bypassing the HTTP/RunManager/StreamBridge path).
+
 ## Tuning recommendations
 
 These aren't required for a working deployment but are improvements
@@ -958,7 +979,12 @@ patches have been absorbed upstream:
   opt-out attribute; our follow-up `f83611f1` removed the now-redundant
   inline chmod).
 
-Most recent upstream sync: **2026-06-10 (later)** absorbed 1 commit (auth-sensitive — full 3-agent
+Most recent upstream sync: **2026-06-10 (latest)** absorbed 1 commit cleanly
+(2-agent triage; tree `da238bd6`, zero conflicts) — **a latent-bug FIX for us, not just an absorb**:
+
+- `05ae4467` fix(docker): default Gateway to a single worker (#3475) — changes the compose default `${GATEWAY_WORKERS:-4}` → `${GATEWAY_WORKERS:-1}`. **We rode the `:-4` default = 4 workers, which silently broke run-cancellation + SSE-reconnect** (run state is per-worker in-process, nginx has no sticky sessions, no shared cross-worker bridge → ~75% of cancel/reconnect requests hit the wrong worker → HTTP 409 + heartbeat-only SSE hangs). Merging dropped us to **1 worker**, eliminating the race — verified live: `--workers 1`, gateway memory ~662 MB → ~175 MB, auth still 401, clean boot. Our 3 compose edits (`stop_grace_period`, `NO_PROXY`, the new `:-1`) all coexist. **See new gotcha #20** — keep `GATEWAY_WORKERS` unset/1 until upstream's shared stream bridge (#3191) lands. The LGI batch is unaffected (`docker exec` path). README + a regression test (`test_compose_default_workers.py`) came with it.
+
+Earlier 2026-06-10 (later) sync absorbed 1 commit (auth-sensitive — full 3-agent
 security triage before merge; clean, tree `23c74bea`) **+ 1 local security hardening**:
 
 - `2b795265` fix: align auth-disabled mode and mock history loading (#3471) — adds an **auth-disabled dev/e2e mode** (anonymous requests run as a synthetic admin `id=e2e-user`, `system_role=admin`) gated behind env `DEER_FLOW_AUTH_DISABLED=1` AND a production kill-switch. **We are auth-ENABLED and do NOT set that flag**, so all new branches are dead code for us — verified at runtime: `is_auth_disabled()` returns `False` and unauthenticated `/api/v1/auth/me` still returns 401. Adversarial review confirmed `auth_middleware.py` is a pure branch-order refactor preserving the enabled-path contract byte-for-byte (junk/expired cookie→401, no-cookie→401, internal-token preserved); `csrf`/`langgraph_auth`/`routers/auth` changes are gated no-ops when auth is enabled. One benign enabled-path delta: `deps.py` now short-circuits to `request.state.user` within a single request (dedups a redundant JWT-decode+DB-lookup; result-equivalent for sessions, no spoofing vector — only AuthMiddleware writes that state). Frontend `hooks.ts` (+55) is gated by `?mock=true`; real authenticated thread-history loading unchanged. Clean merge, no local-patch overlap.
