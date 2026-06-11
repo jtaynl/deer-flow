@@ -241,15 +241,40 @@ make down && make up
     psycopg (which the checkpointer + store use) reads `PGSSLMODE=require`
     from the env, so the URL still has no SSL query param.
 
-14. **AIO sandbox provider does not health-check before reuse.** The
-    gateway keeps an in-process map of `thread_id → sandbox_id`. If the
-    underlying sandbox container dies between tool calls (idle eviction,
-    OOM, `--rm` after exit, a host-level `docker rm`, or any DooD-side
-    cleanup), the provider keeps reusing the dead ID. Every subsequent
-    tool call in that thread hangs ~120 s and then fails with
-    `Failed to execute command in sandbox: [Errno 110] Connection timed out`.
-    The agent's reasoning loop keeps retrying tool calls that all time
-    out, burning tokens and producing no progress.
+14. **AIO sandbox provider stale-handle reuse — PARTIALLY FIXED as of
+    `f401e7ba` (2026-06-11 sync).** The gateway keeps an in-process map of
+    `thread_id → sandbox_id`. If the underlying sandbox container dies
+    (idle eviction, OOM, `--rm` after exit, a host-level `docker rm`, or
+    any DooD-side cleanup), a stale ID could be reused. Symptom when it
+    bites: every subsequent tool call in that thread hangs ~120 s and then
+    fails with
+    `Failed to execute command in sandbox: [Errno 110] Connection timed out`,
+    and the agent's reasoning loop keeps retrying, burning tokens.
+
+    **Two timing windows — only one is now auto-healed:**
+
+    - **Window A — container dies, then a *new* run/turn starts for that
+      thread: FIXED.** `f401e7ba` added an `is_alive` health check
+      (`docker inspect`, works for us via the docker.sock DooD mount, 5 s
+      timeout, offloaded via `asyncio.to_thread`) to the two acquire-time
+      reuse paths (`_reuse_in_process_sandbox` active cache,
+      `_reclaim_warm_pool_sandbox` warm pool). A definitively-dead
+      container is now evicted from the maps, destroyed, and recreated, so
+      the next run no longer inherits a dead `sandbox_id`. **No manual
+      `docker restart deer-flow-gateway` needed for between-run staleness
+      anymore.** Our `GATEWAY_WORKERS=1` (single in-process map) is exactly
+      the targeted scenario; the LGI batch (sequential thread-reusing runs)
+      self-heals between runs.
+    - **Window B — container dies *mid-run* (tool calls within an
+      already-acquired run): NOT FIXED.** The hot tool path
+      (`sandbox/tools.py` `_get_sandbox` / `ensure_sandbox_initialized` →
+      `provider.get()`) is deliberately a lock-protected in-memory lookup
+      with **no** health check (kept event-loop-safe; enforced by
+      `test_get_uses_in_memory_registry_only`). With `lazy_init=True` a
+      sandbox is acquired once at first tool use and reused via `get()` for
+      the rest of the run, so a mid-run death still hangs that run ~120 s.
+      Only the *following* run self-heals. **Manual gateway restart is now
+      only needed to unblock a long-lived run mid-flight.**
 
     Diagnose:
 
@@ -979,7 +1004,16 @@ patches have been absorbed upstream:
   opt-out attribute; our follow-up `f83611f1` removed the now-redundant
   inline chmod).
 
-Most recent upstream sync: **2026-06-11** absorbed 5 commits cleanly
+Most recent upstream sync: **2026-06-11 (later)** absorbed 4 commits
+(5-agent parallel behavioral triage + merge-tree sim; tree `201254b1`, **one real conflict resolved**) —
+a **partial FIX for gotcha #14** plus the WRI-rebrand offline-banner merge:
+
+- `f401e7ba` [codex] Fix stale AIO sandbox cache reuse (#3494) — **partially fixes gotcha #14** (see the updated gotcha #14 above). Adds an `is_alive` `docker inspect` health-check to the sandbox **acquire** paths (`_reuse_in_process_sandbox` + `_reclaim_warm_pool_sandbox`): a dead container is now evicted+destroyed+recreated, so **Window A (cross-run staleness) self-heals — no more manual gateway restart between runs**. **Window B (mid-run death) is NOT fixed** — the hot tool path (`provider.get()`) stays health-check-free for event-loop safety, so a container dying mid-run still hangs that run ~120 s. Works for us via the docker.sock DooD mount; `to_thread`-offloaded; `remote_backend.py` change inert (we run `LocalContainerBackend`). Beneficial for the LGI batch (sequential thread-reusing runs self-heal between runs). No config/.env change.
+- `919d8bc2` fix(sandbox): persist lazily-acquired sandbox state via Command (#3464) — additive `wrap_tool_call`/`awrap_tool_call` on `SandboxMiddleware` that commit a lazily-acquired `sandbox_id` to LangGraph graph state (was an in-invocation `runtime.state` mutation invisible to the channel reducer). **Does NOT change acquire timing** (still lazy on first tool call) and **does NOT fix gotcha #14** (provider-level stale-handle issue). Mildly beneficial: sub-agents (`task_tool`) reliably see the parent's sandbox id. Applies to both gateway + embedded LGI path. No config change.
+- `c733d3c9` fix(frontend): isolate new chat thread messages (#3508) — frontend-only; gates message rendering by `currentViewThreadId` so a new chat no longer shows the prior thread's messages after client-side `replaceState`. Disjoint from WRI rebrand files; clean merge. No batch interaction.
+- `b6fbf0d1` fix(frontend): keep workspace interactive when SSR auth probe can't reach gateway (#3493) — **the conflict.** Replaces the dead-static-HTML `gateway_unavailable` fallback with `<GatewayOfflineFallback renderBanner>` (real AuthProvider + a client banner that silently re-probes `/api/v1/auth/me` every 10 s, applies the recovered user directly, reentrancy-guarded, 3-consecutive-401 → `/login`). **Conflicted with our WRI rebrand of that block in `(auth)/layout.tsx`.** Resolved by adopting upstream's `GatewayOfflineFallback` wrapper + import, grafting our WRI styling (gradient/maroon/heading) onto the inner div, and **dropping the now-redundant manual Retry `<Link>`** (banner auto-re-probes). The auto-added i18n keys (`gatewayUnavailable*`) merged in cleanly across en/zh/types. **Nice side benefit: a `/workspace` tab now stays interactive and the banner auto-clears within ~10 s during a gateway bounce** — exactly the gotcha-14 / redeploy restart window. Frontend rebuilt + typechecked clean on deploy; verified live (auth 403, frontend 200, sandbox-fix code present in running gateway).
+
+Earlier 2026-06-11 sync absorbed 5 commits cleanly
 (5-agent parallel behavioral triage + merge-tree sim; tree `11498269`, exit 0, zero conflicts;
 `prompt.py` auto-merged — our `<language>` block (L369) + upstream's `use_tiktoken` kwarg (L596)
 both preserved). **NONE required any config.yaml/.env action.**
