@@ -450,6 +450,30 @@ make down && make up
     Stage-1 batch is unaffected by worker count (it uses `docker exec` →
     embedded `DeerFlowClient`, bypassing the HTTP/RunManager/StreamBridge path).
 
+21. **The IM-channels subsystem is always wired in, even with zero channels
+    configured — and it auto-creates 4 Postgres tables on boot.** As of the
+    **2026-06-12** sync (upstream `aa015462`, #3487, user-owned IM channel
+    connections), the gateway lifespan unconditionally calls
+    `start_channel_service()` every boot and a `channel_connections` router is
+    mounted at `/api/channels`. With **no IM channels in `config.yaml`** (our
+    case — Playwright MCP only) this is **inert**: the boot log shows
+    `Channel service started: {... all 7 providers enabled:false, running:false}`,
+    no channel workers run, and the mutating `runtime-config` endpoints are
+    **admin-gated** (`/api/channels/providers` returns 401 unauthenticated).
+    The one real side effect: because we have a live DB engine
+    (`run_events.backend: db`), `Base.metadata.create_all` **auto-creates 4 new
+    empty tables** — `channel_connections`, `channel_credentials`,
+    `channel_oauth_states`, `channel_conversations` — idempotently, with no
+    alembic migration and no data. This is expected and benign; do **not**
+    "clean them up." The same sync also **rescoped internal-token authz**:
+    internal-token callers (which we don't use — they're for IM channel
+    workers) are no longer exempt from the stateless-run thread-ownership
+    guard, scoped instead to an `X-DeerFlow-Owner-User-Id` owner header that is
+    ignored for all `system_role` `user`/`admin` (i.e. all our) traffic. Net
+    security hardening; zero behavior change for the operator or the LGI batch.
+    Keep the `channels`/`channel_connections` config blocks **absent** to keep
+    the feature disabled.
+
 ## Tuning recommendations
 
 These aren't required for a working deployment but are improvements
@@ -1004,7 +1028,20 @@ patches have been absorbed upstream:
   opt-out attribute; our follow-up `f83611f1` removed the now-redundant
   inline chmod).
 
-Most recent upstream sync: **2026-06-11 (later)** absorbed 4 commits
+Most recent upstream sync: **2026-06-12** absorbed 9 commits
+(5-agent parallel behavioral triage + merge-tree sim; merge `d1a58aad`, **one real conflict resolved**) —
+the big **user-owned IM channels** feature (inert for us) + an **authz hardening** + runtime perf. **No config.yaml/.env action.**
+
+- `aa015462` feat(im): user-owned IM channel connections (#3487) — **96 files (+8588), but inert for us (NO IM channels configured) — and a net SECURITY hardening.** (1) **Internal-token authz rescoping:** internal-token callers were previously *fully exempt* from the stateless-run thread-ownership guard; now they're scoped to the owner carried in a new `X-DeerFlow-Owner-User-Id` header (`get_trusted_internal_owner_user_id`, honoured ONLY when `system_role == "internal"`). Every real better-auth request is `user`/`admin` (never `internal`), so the header is **ignored for all our traffic** and the prior `check_access` cross-user 404 guard is preserved verbatim — strictly tighter on the internal path, unchanged for us. **LGI batch unaffected** (embedded client bypasses HTTP/internal-token entirely). (2) `POST/DELETE /api/channels/{provider}/runtime-config` are now **admin-gated** (mirrors the MCP-config model); read-only GETs stay open. (3) `auth_disabled.py` `e2e-user`→`default` rename — dead-path (we're `DEER_FLOW_ENV=production`). **Startup side effects (benign, verified):** `start_channel_service()` runs every boot and logs all 7 providers `enabled:false/running:false` (inert idle service); **4 new ORM tables auto-create empty** in Postgres (`channel_connections`, `channel_credentials`, `channel_oauth_states`, `channel_conversations`) via idempotent `create_all` — no migration, no data. Adds an optional `channel_connections` config block (we leave it absent → disabled). **See new gotcha #21.**
+- `76136d22` fix(channels): reload config.yaml on channel restart (#3514) — channels-only; `restart_channel()` re-reads the channel's config entry, `to_thread`-offloaded. Inert with no channels.
+- `0d3bfe0a` perf(runtime): index runs by thread_id in RunManager (#3499) — **our per-worker run-manager path**; pure secondary-index optimisation (lockstep with the source dict), behavior-preserving (run lifecycle/ordering unchanged). Benign speedup.
+- `579e4164` perf(runtime): index messages in `MemoryRunEventStore` (#3531) — **not our path** (we run `run_events.backend: db` → `DbRunEventStore`); the indexed store isn't even instantiated. Inert.
+- `503eeac7` fix(frontend): render user messages as **plain text** + cap blockquote nesting (#3502) — **operator-facing UI change:** human messages now render verbatim (whitespace-pre-wrap, no markdown) instead of through the markdown renderer. Self-contained render-layer change; no rebrand collision.
+- `b8f5ed36` fix(skills): keep skill archive installation off the event loop (#3505) — `to_thread` the skill-install IO; our skills map is empty → benign.
+- `c002596a` chore(todo): remove an unused completion-reminder counter — no behavior change. `a838546a` blocking-io detector CLI shim — dev/CI-only. `bbce6c0a` docs(config): SearXNG/Browserless config examples — `config.example.yaml` only (bumps **example** version 12→13; live config is v9, warning-only/non-fatal — already fires; do NOT enable the example blocks).
+- **The conflict — `settings-dialog.tsx`:** aa015462 adds a Channels settings tab (`CableIcon` + `ChannelsSettingsPage` import, `channels` section + render), which collided with our hide-About-tab patch (`72a02078`, which had removed the `InfoIcon` import + About sidebar entry). **Resolved:** keep all upstream Channels additions, keep our About removal (drop `InfoIcon`, no About sidebar entry; the unreachable `about` render + `AboutSettingsPage` import stay harmless). i18n `t.settings.sections.channels` shipped with the commit (en/zh/types). Frontend rebuilt + typechecked clean on deploy; verified live (auth 403, frontend 200, channels all `enabled:false`).
+
+Earlier 2026-06-11 (later) sync absorbed 4 commits
 (5-agent parallel behavioral triage + merge-tree sim; tree `201254b1`, **one real conflict resolved**) —
 a **partial FIX for gotcha #14** plus the WRI-rebrand offline-banner merge:
 
