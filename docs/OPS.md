@@ -1028,7 +1028,16 @@ patches have been absorbed upstream:
   opt-out attribute; our follow-up `f83611f1` removed the now-redundant
   inline chmod).
 
-Most recent upstream sync: **2026-06-12** absorbed 9 commits
+Most recent upstream sync: **2026-06-13** absorbed 7 commits cleanly
+(4-agent parallel behavioral triage + merge-tree sim; merge `66e4b144`, exit 0, zero conflicts). **No config.yaml/.env action.**
+
+- `09429644` fix(history): strip base64 image data from REST endpoint responses (#3535) — **beneficial behavioral fix.** New `runtime/serialization.py` helpers strip `data:` base64 `image_url` blocks **only from `hide_from_ui` messages** (ViewImageMiddleware internal model-context) in 6 REST endpoints incl. `get_thread_history`. **No rendering regression** — the frontend already drops `hide_from_ui` messages before render; user-uploaded/visible images are untouched. **Persisted checkpoints are NOT modified** (operates on a serialized copy), so existing image threads stay replayable. Fixes a UI freeze on image-bearing threads. LGI/embedded path unaffected. No config change.
+- `3475f7cd` / `83bc2fb1` chore(deps): bump **starlette 1.0.0→1.0.1** (pure-python patch) + **aiohttp 3.13.5→3.14.0** (transitive) in `backend/uv.lock`. aiohttp is pulled in only by IM-channel SDKs + firecrawl (we use neither — our fetch path is httpx); **zero direct imports in the repo**. Ships a prebuilt cp312 wheel → no C build on `python:3.12-slim`. Verified live: running gateway reports `aiohttp 3.14.0 | starlette 1.0.1`, clean boot. No `pyproject.toml` change.
+- `a17d2ff8` fix(mcp): surface admin-required state on the settings Tools page (#3533) — frontend resilience fix; the MCP-config admin gate (403 for non-admin) is **pre-existing backend behavior**, this just renders it instead of failing silently. We're single-operator-admin → page renders normally. Touches `tool-settings-page.tsx`, `core/mcp/api.ts/hooks.ts` + i18n (en/zh/types). No schema change.
+- `839fa992` feat(telegram): stream replies by editing the placeholder message; `420a886e` fix(channels): offload inbound file-IO — **both channels-only → inert** (no IM channels). Touch `channels/manager.py`/`telegram.py` only.
+- `cad6e89a` fix(scripts): `make stop` can't stop next-server — `scripts/serve.sh`, **dev-tooling only** (our prod path is `docker compose`; serve.sh never runs in-container). New `DEERFLOW_DAEMON_ROOT` is an internal serve.sh var, never set in our deploy.
+
+Earlier 2026-06-12 sync absorbed 9 commits
 (5-agent parallel behavioral triage + merge-tree sim; merge `d1a58aad`, **one real conflict resolved**) —
 the big **user-owned IM channels** feature (inert for us) + an **authz hardening** + runtime perf. **No config.yaml/.env action.**
 
