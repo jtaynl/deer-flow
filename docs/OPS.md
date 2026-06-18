@@ -87,25 +87,48 @@ recreated.
 
 ## Upstream sync workflow
 
+`local-fixes` is **merge-maintained** (50+ merge commits — it merges `upstream/main`
+directly). **Do NOT rebase it**: a rebase would rewrite 200+ commits and force-push a
+destructive history. Merge instead (this is what every prior sync did).
+
 ```bash
 cd ~/deer-flow
 
-# 1. Fast-forward main to upstream
+# 1. Fetch upstream + merge into local-fixes (the deploy branch).
 git fetch upstream main
-git checkout main
-git merge --ff-only upstream/main
-git push origin main                              # keep your fork's main aligned
-
-# 2. Replay local patches on top of new main
 git checkout local-fixes
-git rebase main                                   # obsolete patches auto-skip
-git push --force-with-lease origin local-fixes    # required: rebase rewrites SHAs
+git merge-tree --write-tree local-fixes upstream/main >/dev/null && echo "clean"  # optional conflict preview
+git merge --no-edit upstream/main                 # resolve conflicts if any (history shows clean)
 
-# 3. Rebuild + relaunch
+# 2. Record the sync in this file: prepend a "Most recent upstream sync" entry
+#    (demote the prior one to "Earlier <date>"), then commit.
+git add docs/OPS.md
+git commit -m "docs(ops): record YYYY-MM-DD sync (N commits, <upstream-tip>) — clean merge"
+
+# 3. Rebuild + verify BEFORE pushing (don't publish a sync you haven't deployed).
 make down && make up
+# verify: gateway logs "Application startup complete", app :2026 → 200, deps + models intact.
+
+# 4. Push (NO force — a merge appends; it never rewrites history).
+git push origin local-fixes
+
+# 5. Keep the fork's main aligned (safe fast-forward only).
+git checkout main && git merge --ff-only upstream/main && git push origin main && git checkout local-fixes
 ```
 
-**Never** use `--force` on `main`. Only `local-fixes` and topic branches.
+**Never force-push.** With the merge workflow no `--force` is needed on any branch;
+`main` only ever fast-forwards.
+
+**Gotcha — a stale ROOT-owned working-tree dir can block the `git checkout` between
+branches** (e.g. `frontend/public/wri/`, a container-written artifact). Without sudo,
+`brandon` can't move or delete a root-owned dir (a cross-parent rename needs write *on the
+dir* to update `..`). Clear it via a throwaway root container, then re-checkout — git
+restores the tracked, brandon-owned copy:
+
+```bash
+docker run --rm --entrypoint sh -v ~/deer-flow/frontend/public:/pub <any-present-image> -c 'rm -rf /pub/wri'
+git checkout local-fixes
+```
 
 ## Non-obvious gotchas
 
