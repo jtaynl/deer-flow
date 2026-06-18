@@ -1028,7 +1028,16 @@ patches have been absorbed upstream:
   opt-out attribute; our follow-up `f83611f1` removed the now-redundant
   inline chmod).
 
-Most recent upstream sync: **2026-06-15** absorbed 15 commits cleanly
+Most recent upstream sync: **2026-06-18** absorbed 25 commits cleanly
+(merge-tree verified, exit 0, zero conflicts; merge `6044e5c5` → merge commit `8f8f0dcc`). **No config.yaml/.env/schema change; the gateway rebuild ships the backend dep bumps.** Mostly IM-channel hardening (inert here) + dependency maintenance + sandbox fixes.
+
+- **5 dependency bumps** (`backend/uv.lock`): **cryptography 46.0.7→48.0.1**, **aiohttp 3.14.0→3.14.1**, **starlette 1.0.1→1.3.1**, **pyjwt 2.12.1→2.13.0**, **python-multipart 0.0.27→0.0.31**. Security/maintenance; prebuilt cp312 wheels (no C build). Ship on the gateway rebuild. ⚠️ starlette 1.0→1.3 is a minor-series jump — boot-verify after redeploy.
+- **Sandbox fixes (we use aio):** `97dd9ecf` stop flagging string-literal path fragments as unsafe absolute paths; `6a4a30fa` actionable hint when `read_file` hits a binary file; `f212da9f` create shell session before retrying on a fresh id; `5851f825` make `setup-sandbox.sh` executable (now `100755`). Backend-only, beneficial.
+- `05be7ea6` **fix(subagents): raise general-purpose max_turns to 150 + default timeout 30min (#3610)** — subagent behavior change; our LGI Stage-1 runs with subagents OFF (`--subagents` default off) so inert there, but applies to any subagent use.
+- `c81ab268` stop stripping `__interrupt__` from channel values; `a72af8ea` Langfuse subagent-span attribution; `1896722e` MCP tools-cache-reset endpoint — backend resilience/observability, beneficial or inert.
+- **Inert / no-op for us:** the IM-channel hardening batch (`525af0da` `2b301e82` `68ba4198` `8c0830ae` `e732a741` `926406e0` `43dba448` `0966131b` `ec16b665` — IM channels unconfigured); `0bbbbc06` Serper Google-Images `image_search` provider (we use Tavily/Jina); `65fab1d4` maintainer-orchestrator skill + `6044e5c5` bug-report.yml (docs/CI only).
+
+Earlier 2026-06-15 sync absorbed 15 commits cleanly
 (15-agent parallel behavioral triage + merge-tree sim; merge `d2cc991d`, exit 0, zero conflicts). **One deploy action — redeploy the gateway to apply the CLI-auth-mount security fix (`474c89ba`); no config.yaml/.env/schema change.** Upstream also cut a **`2.0.0-release` branch + tag `v2.0.0-rc0`** — a 2.0 release candidate is incoming; review before the next deep sync.
 
 - `474c89ba` **fix(security): do not bind-mount host CLI auth dirs by default (#3521)** — drops the default `~/.claude` + `~/.codex` gateway bind-mounts (moved to an opt-in `docker/docker-compose.cli-auth.yaml` overlay). **ACTION: redeploy** (`scripts/deploy.sh`) — the live gateway (created 2026-06-13) still mounts our real `~/.claude`/`~/.codex` (credentials + shell history) into the sandbox container; we authenticate by API key (`ANTHROPIC_API_KEY`; no CLI-login provider, no `acp_agents`) so the mounts are dead weight → dropping them is a pure security win. `deploy.sh` will NOT add the cli-auth overlay (we don't use it). No `.env`/config change.
