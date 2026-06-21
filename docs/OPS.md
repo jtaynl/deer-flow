@@ -109,6 +109,18 @@ git commit -m "docs(ops): record YYYY-MM-DD sync (N commits, <upstream-tip>) —
 make down && make up
 # verify: gateway logs "Application startup complete", app :2026 → 200, deps + models intact.
 
+# 3b. RECONCILE THE DB SCHEMA — create_all only CREATES tables, it never ALTERs an existing one, so an
+#     upstream upgrade that adds a column to an existing table (e.g. 2.0 added runs.token_usage_by_model)
+#     leaves the column MISSING on our DB → chat-run 500. schema_sync adds any missing columns:
+sg docker -c 'docker exec deer-flow-gateway sh -lc "cd /app/backend && PYTHONPATH=/app/backend .venv/bin/python scripts/schema_sync.py --apply"'
+#     (drop --apply for a read-only check; it exits 1 on drift. NOT-NULL-no-default columns are reported
+#      for a manual backfill decision rather than guessed.)
+
+# 3c. SMOKE A REAL CHAT RUN — HTTP 200 + "startup complete" do NOT exercise the run/persist path (that's
+#     how the 2026-06-21 token_usage_by_model 500 slipped through). Open https://<domain>/workspace/chats/new
+#     and send one message; confirm it streams a reply (no 500). Then check the gateway log is clean:
+sg docker -c 'docker logs --since 3m deer-flow-gateway 2>&1 | grep -iE "error|traceback|UndefinedColumn|500" | grep -v PendingDeprecation'   # expect no output
+
 # 4. Push (NO force — a merge appends; it never rewrites history).
 git push origin local-fixes
 
