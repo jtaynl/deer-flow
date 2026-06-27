@@ -1066,7 +1066,10 @@ patches have been absorbed upstream:
   opt-out attribute; our follow-up `f83611f1` removed the now-redundant
   inline chmod).
 
-Most recent upstream sync: **2026-06-26 (later)** absorbed 1 commit — **CLEAN merge** (merge-tree exit 0)
+Most recent upstream sync: **2026-06-27** absorbed 3 commits — **CLEAN merge** (merge-tree exit 0)
+(merge `d85722c6` → upstream tip `3e2f1bbe`, merge commit `c24933af`). All 3 are FRONTEND artifact-preview fixes — `#3198` show filename for presented artifacts missing from `thread.values.artifacts`, `#3791` preserve artifacts during streaming updates, `#3805` markdown heading-anchors in artifact previews. **Frontend-only** (9 files: artifact-panel components + e2e/unit tests + **one new frontend dep** in `package.json`/`pnpm-lock.yaml`); NO backend/schema/config or local-patch overlap (prompt.py/login/Dockerfile/compose/nginx untouched). No new migration → alembic no-op (`branch=versioned -> upgrade head (0002)`). Rebuilt **`make down && make up`** (frontend rebuild + `pnpm install` pulls the new dep): gateway "Application startup complete" (clean), app `:2026` 200, **3c HTTP smoke** (`ts_team@sipmm.edu.sg` → `POST /api/threads` → `/runs/wait` → "pong"; run persisted, zero 5xx). `config.yaml` untouched (qwen/Bailian intact). Pre-sync `d85722c6` (rollback branch `presync-20260627`, deleted post-verify). `main` ff to `3e2f1bbe` separately.
+
+Earlier 2026-06-26 (later) sync absorbed 1 commit — **CLEAN merge** (merge-tree exit 0)
 (merge `630e71a3` → upstream tip `7a6c4a99`, merge commit `d29123b1`). Single commit `#3799` fix(channels): serialize per-chat thread creation to avoid duplicate threads — touches ONLY `backend/app/channels/manager.py` (+ its test); **INERT for us** (IM channels disabled, none configured). No config/.env/schema change, no new migration → alembic no-op at head `0002`. Rebuilt `make down && make up`: gateway "Application startup complete" (clean), app `:2026` 200, 3c HTTP smoke (`ts_team@sipmm.edu.sg` → `/runs/wait` → "pong", run persisted, zero 5xx). Pre-sync `630e71a3` (rollback branch `presync-20260626b`, deleted post-verify). `main` ff to `7a6c4a99`.
 
 Earlier 2026-06-26 sync absorbed 9 commits — **CLEAN merge** (merge-tree exit 0, zero conflicts)
