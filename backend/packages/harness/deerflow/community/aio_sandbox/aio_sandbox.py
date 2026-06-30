@@ -110,7 +110,7 @@ class AioSandbox(Sandbox):
     # default.
     _DEFAULT_NO_CHANGE_TIMEOUT = 600
 
-    def execute_command(self, command: str) -> str:
+    def execute_command(self, command: str, timeout: float | None = None) -> str:
         """Execute a shell command in the sandbox.
 
         Uses a lock to serialize concurrent requests. The AIO sandbox
@@ -122,6 +122,15 @@ class AioSandbox(Sandbox):
 
         Args:
             command: The command to execute.
+            timeout: Accepted for interface compatibility with the shared bash
+                tool (LocalSandbox honors ``sandbox.bash_command_timeout`` via
+                subprocess, see #3864). The AIO sandbox bounds long-running
+                commands with its own ``no_change_timeout`` on the persistent
+                shell session, so this parameter is accepted but not separately
+                applied — WRI local shim so ``tools.py``'s
+                ``execute_command(command, timeout=...)`` call does not raise
+                ``TypeError`` on this community provider, which upstream #3864
+                did not update.
 
         Returns:
             The output of the command.
