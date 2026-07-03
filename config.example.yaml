@@ -15,13 +15,20 @@
 # ============================================================================
 # Bump this number when the config schema changes.
 # Run `make config-upgrade` to merge new fields into your local config.yaml.
-config_version: 16
+config_version: 17
 
 # ============================================================================
 # Logging
 # ============================================================================
 # Log level for deerflow modules (debug/info/warning/error)
 log_level: info
+
+# Request trace correlation for Gateway logs, HTTP response headers, and
+# Langfuse metadata. Disabled by default to preserve existing HTTP/log output.
+logging:
+  enhance:
+    enabled: false
+    format: text
 
 # ============================================================================
 # Token Usage
@@ -46,6 +53,17 @@ token_budget:
   max_output_tokens: null       # Optional separate output-only limit
   warn_threshold: 0.8           # Warn at 80% of the budget
   hard_stop_threshold: 1.0      # Force stop at 100% of the budget
+
+# ============================================================================
+# Recursion Limit — Hard ceiling for a client-supplied run recursion_limit
+# ============================================================================
+# A run's recursion_limit caps the number of LangGraph super-steps (each is at
+# least one LLM call). The Gateway never trusts a client-supplied value
+# verbatim: any value above this ceiling is clamped down to it, preventing
+# runaway API cost / DoS. Invalid or non-positive client values fall back to
+# the server default of 100. Raise this only if you legitimately run very
+# deeply nested subagent graphs.
+max_recursion_limit: 1000
 
 
 # ============================================================================
@@ -663,6 +681,21 @@ tools:
   #   # wait_for_timeout_ms: 2000        # Extra wait after page load in milliseconds
   #   # wait_for_selector: "article"     # CSS selector to wait for before returning
 
+  # Web fetch tool (uses Crawl4AI - self-hosted headless Chromium, no API key)
+  # Crawl4AI returns server-cleaned "fit" markdown directly (no readability step needed),
+  # ideal for JavaScript-heavy sites. Self-host (JWT auth is off by default, no key):
+  #   docker run -d -p 11235:11235 --shm-size=1g unclecode/crawl4ai:0.8.6
+  # For Docker deployments, use the Docker service name instead of localhost.
+  # NOTE: Only one web_fetch provider can be active at a time.
+  # Comment out the Jina AI web_fetch entry below before enabling this one.
+  # - name: web_fetch
+  #   group: web
+  #   use: deerflow.community.crawl4ai.tools:web_fetch_tool
+  #   base_url: http://localhost:11235   # Crawl4AI server URL (Docker: http://crawl4ai:11235)
+  #   timeout: 30                         # Request timeout in seconds
+  #   # filter: fit                       # Markdown filter: fit (default) | raw | bm25 | llm
+  #   # token: $CRAWL4AI_TOKEN            # Bearer token (only if the server has JWT auth enabled)
+
   # Web capture tool (uses Browserless /screenshot to render a page as an artifact)
   # Browserless captures JavaScript-heavy pages with a real headless Chrome and
   # writes the screenshot into the current thread's outputs. It can run against
@@ -765,6 +798,20 @@ tools:
   #   use: deerflow.community.serper.tools:image_search_tool
   #   max_results: 5   # capped at 10 by the Serper provider
   #   # api_key: $SERPER_API_KEY  # Optional explicit env-var reference
+
+  # Image search tool (uses Brave Image Search API, requires BRAVE_SEARCH_API_KEY)
+  # Brave provides independent image results and works alongside the Brave web search tool.
+  # Note: set BRAVE_SEARCH_API_KEY in your environment before starting the app.
+  # Avoid putting literal API keys in config.yaml; use the $VAR form instead.
+  # - name: image_search
+  #   group: web
+  #   use: deerflow.community.brave.tools:image_search_tool
+  #   max_results: 5   # capped at 200 by Brave Image Search
+  #   # country: US
+  #   # search_lang: en
+  #   # safesearch: strict
+  #   # spellcheck: true
+  #   # api_key: $BRAVE_SEARCH_API_KEY  # Optional explicit env-var reference
 
   # File operations tools
   - name: ls
@@ -1259,12 +1306,12 @@ skill_evolution:
 # Checkpointer Configuration (DEPRECATED — use `database` instead)
 # ============================================================================
 # Legacy standalone checkpointer config. Kept for backward compatibility.
-# Prefer the unified `database` section below, which drives BOTH the
-# LangGraph checkpointer AND DeerFlow application data (runs, feedback,
-# events) from a single backend setting.
+# Prefer the unified `database` section below, which drives the LangGraph
+# checkpointer, LangGraph Store, and DeerFlow application data (runs,
+# feedback, events) from a single backend setting.
 #
 # If both `checkpointer` and `database` are present, `checkpointer`
-# takes precedence for LangGraph state persistence only.
+# takes precedence for the LangGraph checkpointer and Store only.
 #
 # checkpointer:
 #   type: sqlite
@@ -1277,8 +1324,8 @@ skill_evolution:
 # ============================================================================
 # Database
 # ============================================================================
-# Unified storage backend for LangGraph checkpointer and DeerFlow
-# application data (runs, threads metadata, feedback, etc.).
+# Unified storage backend for the LangGraph checkpointer, LangGraph Store,
+# and DeerFlow application data (runs, threads metadata, feedback, etc.).
 #
 # backend: memory  -- No persistence, data lost on restart
 # backend: sqlite  -- Single-node deployment, files in sqlite_dir
@@ -1289,7 +1336,7 @@ skill_evolution:
 #   sqlite_dir: .deer-flow/data
 #
 # SQLite mode uses a single deerflow.db file with WAL journal mode
-# for both checkpointer and application data.
+# for the checkpointer, Store, and application data.
 #
 # Postgres mode: put your connection URL in .env as DATABASE_URL,
 # then reference it here with $DATABASE_URL.
@@ -1314,7 +1361,8 @@ skill_evolution:
 #   (--all-packages propagates the extra into workspace members — see PR #2584)
 #
 # NOTE: When both `checkpointer` and `database` are configured,
-# `checkpointer` takes precedence for LangGraph state persistence.
+# `checkpointer` takes precedence for the LangGraph checkpointer and Store;
+# `database` still controls DeerFlow application data.
 # If you use `database`, you can remove the `checkpointer` section.
 # database:
 #   backend: sqlite
