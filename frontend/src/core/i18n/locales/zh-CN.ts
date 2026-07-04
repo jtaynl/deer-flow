@@ -177,6 +177,7 @@ export const zhCN: Translations = {
         icon: SparklesIcon,
       },
     ],
+    pleaseWaitStreaming: "请等待当前响应完成。",
   },
 
   // Sidebar

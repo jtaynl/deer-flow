@@ -185,6 +185,7 @@ export const enUS: Translations = {
         icon: SparklesIcon,
       },
     ],
+    pleaseWaitStreaming: "Please wait for the current response to finish.",
   },
 
   // Sidebar
