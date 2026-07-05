@@ -37,16 +37,19 @@ import { useI18n } from "@/core/i18n/hooks";
 import {
   extractContentFromMessage,
   extractReasoningContentFromMessage,
+  getMessageCopyData,
   parseUploadedFiles,
   stripUploadedFilesTag,
   type FileInMessage,
 } from "@/core/messages/utils";
 import { useRehypeSplitWordsIntoSpans } from "@/core/rehype";
+import { readReferenceMessageContexts } from "@/core/sidecar";
 import { SafeReasoningContent } from "@/core/streamdown/components";
 import { cn } from "@/lib/utils";
 
 import { CitationSourcesPanel } from "../citations/citation-sources-panel";
 import { CopyButton } from "../copy-button";
+import { ReferenceAttachmentSummary } from "../sidecar/reference-attachments";
 
 import { MarkdownContent } from "./markdown-content";
 import { createMarkdownLinkComponent } from "./markdown-link";
@@ -160,13 +163,7 @@ export function MessageListItem({
           )}
         >
           <div className="pointer-events-auto flex gap-1">
-            <CopyButton
-              clipboardData={
-                extractContentFromMessage(message) ??
-                extractReasoningContentFromMessage(message) ??
-                ""
-              }
-            />
+            <CopyButton clipboardData={getMessageCopyData(message)} />
             {feedback !== undefined && runId && threadId && (
               <FeedbackButtons
                 threadId={threadId}
@@ -245,7 +242,7 @@ function MessageContent_({
       clientTurnDurations.set(`${threadId}:${message.id}`, rawTurnDuration);
       setCachedDuration(rawTurnDuration);
     }
-  }, [rawTurnDuration, message.id]);
+  }, [rawTurnDuration, message.id, threadId]);
 
   const handleDurationChange = useCallback(
     (d: number | undefined) => {
@@ -254,7 +251,7 @@ function MessageContent_({
         setCachedDuration(d);
       }
     },
-    [message.id],
+    [message.id, threadId],
   );
 
   useEffect(() => {
@@ -295,6 +292,16 @@ function MessageContent_({
     }
     return files as FileInMessage[];
   }, [message.additional_kwargs?.files, rawContent]);
+  const referenceAttachments = useMemo(
+    () =>
+      readReferenceMessageContexts(message.additional_kwargs).map(
+        (context, index) => ({
+          id: index,
+          context,
+        }),
+      ),
+    [message.additional_kwargs],
+  );
 
   const contentToDisplay = useMemo(() => {
     if (isHuman) {
@@ -357,6 +364,13 @@ function MessageContent_({
           className,
         )}
       >
+        {referenceAttachments.length > 0 && (
+          <ReferenceAttachmentSummary
+            className="self-end shadow-none"
+            references={referenceAttachments}
+            testId="message-reference-attachment"
+          />
+        )}
         {filesList}
         {contentToDisplay && (
           <AIElementMessageContent className="w-full max-w-full">
