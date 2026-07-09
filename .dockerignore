@@ -65,6 +65,11 @@ frontend/node_modules
 backend/.venv
 backend/htmlcov
 backend/.coverage
+# Gateway runtime home (per-thread state + sandbox workspaces) — volume-mounted at
+# runtime, never a build input. Contains root-owned sandbox dirs (created by pipeline
+# runs through the Aio sandbox) that break the build-context sender with EPERM.
+backend/.deer-flow/
+**/.deer-flow/
 *.md
 !README.md
 !frontend/README.md
