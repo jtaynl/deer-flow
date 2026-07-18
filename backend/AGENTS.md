@@ -142,10 +142,13 @@ Blocking-IO runtime gate (`tests/blocking_io/`):
   `test_jsonl_run_event_store.py` (locks `JsonlRunEventStore`'s async
   API offloading its file IO via `asyncio.to_thread`);
   `test_uploads_middleware.py` (locks `UploadsMiddleware.abefore_agent`
-  offloading the uploads-directory scan off the event loop); and
+  offloading the uploads-directory scan off the event loop);
   `test_uploads_router.py` (locks Gateway upload/list/delete endpoints
   offloading upload directory creation, staged writes, chmod/cleanup,
-  directory scans/deletes, and remote sandbox sync off the event loop).
+  directory scans/deletes, and remote sandbox sync off the event loop); and
+  `test_workspace_changes_recorder.py` (locks the offload around the snapshot
+  text cache lifecycle — roots resolution, `mkdtemp`, and the `shutil.rmtree`
+  on both the capture-failure branch and `record_workspace_changes`' `finally`).
 - `test_gate_smoke.py` is a meta-test asserting the gate actually catches
   unoffloaded blocking IO and that the `@pytest.mark.allow_blocking_io`
   opt-out works.
@@ -543,6 +546,7 @@ The cached value is reused for both the blocking (`runs.wait`) and streaming (`_
 - Disabled by default. It is a user-binding layer on top of the existing `channels.*` runtime config, not a replacement for provider bot credentials.
 - No public IP, OAuth callback URL, or provider webhook route is required by the current implementation.
 - Telegram uses a deep-link `/start <code>` flow over the existing long-polling worker. Slack, Discord, Feishu/Lark, DingTalk, WeChat, and WeCom use `/connect <code>` over their existing outbound channel workers.
+- WeChat timing settings (`polling_timeout`, `polling_retry_delay`, `qrcode_poll_interval`, `qrcode_poll_timeout`) accept only positive finite seconds; invalid values fall back to their defaults so polling cannot enter a hot loop or sleep forever.
 - Frontend APIs: `GET /api/channels/providers`, `GET /api/channels/connections`, `POST /api/channels/{provider}/connect`, and `DELETE /api/channels/connections/{connection_id}`.
 - Browser APIs remain protected by normal Gateway auth/CSRF. Provider messages arrive through the already-configured channel workers.
 - Provider-level `connection_status` reflects the user's newest connection row. With no binding it is `not_connected`, except in auth-disabled local mode where a configured running channel reports `connected` because all channel messages already route to the default user.
