@@ -5,10 +5,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { RememberSessionOption } from "@/components/auth/remember-session-option";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { getCsrfHeaders } from "@/core/api/fetcher";
 import { useAuth } from "@/core/auth/AuthProvider";
+import { loadRememberLoginPreference } from "@/core/auth/remember-login";
 import {
   fetchSetupStatus,
   isSystemAlreadyInitializedError,
@@ -65,6 +67,9 @@ export default function SetupPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [rememberMe, setRememberMe] = useState(
+    () => loadRememberLoginPreference().rememberMe,
+  );
 
   const [currentPassword, setCurrentPassword] = useState("");
 
@@ -113,7 +118,11 @@ export default function SetupPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ email, password: newPassword }),
+        body: JSON.stringify({
+          email,
+          password: newPassword,
+          remember_me: rememberMe,
+        }),
       });
 
       if (!res.ok) {
@@ -161,6 +170,7 @@ export default function SetupPage() {
           current_password: currentPassword,
           new_password: newPassword,
           new_email: email || undefined,
+          remember_me: rememberMe,
         }),
       });
 
@@ -255,6 +265,10 @@ export default function SetupPage() {
                 autoComplete="new-password"
               />
             </div>
+            <RememberSessionOption
+              checked={rememberMe}
+              onCheckedChange={setRememberMe}
+            />
             {error && (
               <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
                 {error}
@@ -357,6 +371,10 @@ export default function SetupPage() {
               autoComplete="new-password"
             />
           </div>
+          <RememberSessionOption
+            checked={rememberMe}
+            onCheckedChange={setRememberMe}
+          />
           {error && (
             <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
               {error}
