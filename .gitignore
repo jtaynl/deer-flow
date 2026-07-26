@@ -60,7 +60,9 @@ web/
 
 # Deployment artifacts
 backend/Dockerfile.langgraph
-config.yaml.bak
+# Trailing * matters: config.yaml holds live API keys, and dated backups
+# (config.yaml.bak-<reason>-<date>) were NOT matched by the bare `.bak` form.
+config.yaml.bak*
 .playwright-mcp
 /frontend/test-results/
 /frontend/playwright-report/
