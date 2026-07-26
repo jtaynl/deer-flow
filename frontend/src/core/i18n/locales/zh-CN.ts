@@ -83,7 +83,7 @@ export const zhCN: Translations = {
 
     createYourOwnSkill: "创建你自己的 Agent SKill",
     createYourOwnSkillDescription:
-      "创建你的 Agent Skill 来释放 DeerFlow 的潜力。通过自定义技能，DeerFlow\n可以帮你搜索网络、分析数据，还能为你生成幻灯片、\n网页等作品，几乎可以做任何事情。",
+      "创建你的 Agent Skill 来释放 WRI AI 的潜力。通过自定义技能，WRI AI\n可以帮你搜索网络、分析数据，还能为你生成幻灯片、\n网页等作品，几乎可以做任何事情。",
   },
 
   // Clipboard
@@ -425,13 +425,13 @@ export const zhCN: Translations = {
     save: "保存智能体",
     saving: "正在保存智能体...",
     saveRequested:
-      "已提交保存请求，DeerFlow 正在根据当前对话生成并保存初版智能体。",
+      "已提交保存请求，WRI AI 正在根据当前对话生成并保存初版智能体。",
     saveHint:
       "你可以在右上角的菜单里随时保存这个智能体，就算目前还只是初稿也可以。",
     saveCommandMessage:
       "请现在根据我们目前已经讨论的全部内容保存这个自定义智能体。这就是我明确的保存确认。如果仍有少量细节缺失，请根据上下文做出合理假设，生成一份简洁的英文初始 SOUL.md，并直接调用 setup_agent，不要再向我索要额外确认。",
     agentCreatedPendingRefresh:
-      "智能体已创建，但 DeerFlow 暂时还无法读取到它。请稍后刷新当前页面。",
+      "智能体已创建，但 WRI AI 暂时还无法读取到它。请稍后刷新当前页面。",
     more: "更多操作",
     agentCreated: "智能体已创建！",
     startChatting: "开始对话",
@@ -470,7 +470,7 @@ export const zhCN: Translations = {
     visitGithub: "在 GitHub 上查看 DeerFlow",
     reportIssue: "报告问题",
     contactUs: "联系我们",
-    about: "关于 DeerFlow",
+    about: "关于 WRI AI",
     logout: "退出登录",
     gatewayUnavailable: "网关暂时不可用。",
     gatewayUnavailableRetrying: "正在后台重试…",
@@ -541,13 +541,13 @@ export const zhCN: Translations = {
     saveAndConnect: "保存并连接",
     saveChanges: "保存修改",
     descriptions: {
-      telegram: "通过 DeerFlow Bot 接收 Telegram 私聊消息。",
+      telegram: "通过 WRI AI Bot 接收 Telegram 私聊消息。",
       slack: "接收 Slack 工作区消息和提及。",
-      discord: "通过 DeerFlow Bot 接收 Discord 服务器消息。",
-      feishu: "通过 DeerFlow 应用接收飞书和 Lark 消息。",
-      dingtalk: "通过 DeerFlow Bot 接收钉钉 Stream Push 消息。",
-      wechat: "通过 DeerFlow Bot 接收微信 iLink 消息。",
-      wecom: "通过 DeerFlow AI Bot 接收企业微信消息。",
+      discord: "通过 WRI AI Bot 接收 Discord 服务器消息。",
+      feishu: "通过 WRI AI 应用接收飞书和 Lark 消息。",
+      dingtalk: "通过 WRI AI Bot 接收钉钉 Stream Push 消息。",
+      wechat: "通过 WRI AI Bot 接收微信 iLink 消息。",
+      wecom: "通过 WRI AI AI Bot 接收企业微信消息。",
     },
     connectedAs: (name: string) => `已连接为 ${name}。`,
   },
@@ -579,7 +579,7 @@ export const zhCN: Translations = {
     writeFile: "写入文件",
     clickToViewContent: "点击查看文件内容",
     writeTodos: "更新 To-do 列表",
-    skillInstallTooltip: "安装技能并使其可在 DeerFlow 中使用",
+    skillInstallTooltip: "安装技能并使其可在 WRI AI 中使用",
     browserNavigate: (url: string) => `在浏览器中打开 ${url}`,
     browserNavigateGeneric: "在浏览器中打开页面",
     browserClick: "在浏览器中点击元素",
@@ -665,7 +665,7 @@ export const zhCN: Translations = {
     noResults: "未找到结果。",
     actions: "操作",
     keyboardShortcuts: "键盘快捷键",
-    keyboardShortcutsDescription: "使用键盘快捷键更快地操作 DeerFlow。",
+    keyboardShortcutsDescription: "使用键盘快捷键更快地操作 WRI AI。",
     openCommandPalette: "打开命令面板",
     toggleSidebar: "切换侧边栏",
   },
@@ -688,7 +688,7 @@ export const zhCN: Translations = {
     memory: {
       title: "记忆",
       description:
-        "DeerFlow 会在后台不断从你的对话中自动学习。这些记忆能帮助 DeerFlow 更好地理解你，并提供更个性化的体验。",
+        "WRI AI 会在后台不断从你的对话中自动学习。这些记忆能帮助 WRI AI 更好地理解你，并提供更个性化的体验。",
       empty: "暂无可展示的记忆数据。",
       rawJson: "原始 JSON",
       exportButton: "导出记忆",
@@ -782,7 +782,7 @@ export const zhCN: Translations = {
     },
     channels: {
       title: "渠道",
-      description: "连接可在浏览器外向 DeerFlow 发送消息的即时通讯账号。",
+      description: "连接可在浏览器外向 WRI AI 发送消息的即时通讯账号。",
       disabled:
         "当前服务器未启用渠道连接。请联系管理员开启 channel_connections。",
     },
@@ -831,9 +831,9 @@ export const zhCN: Translations = {
           "飞书已连接，无需重复授权。如果授权已过期，刷新状态后可重新连接。",
         connectionStarted: "连接链接已打开",
         connectionReady: "连接准备已完成，正在打开授权链接",
-        authStarted: "授权页已打开，DeerFlow 会自动检测授权结果。",
+        authStarted: "授权页已打开，WRI AI 会自动检测授权结果。",
         authorizationStillPending:
-          "还没有检测到授权完成。请在浏览器完成授权；DeerFlow 会继续自动检测。如果页面没有更新，可点击“我已完成授权”。",
+          "还没有检测到授权完成。请在浏览器完成授权；WRI AI 会继续自动检测。如果页面没有更新，可点击“我已完成授权”。",
         permissionTitle: "授权范围",
         permissionDescription:
           "默认只完成基础登录，不会申请任何业务权限。按需在这里勾选要授权的业务域；已连接用户可以重新授权继续追加（scope 会累积）。",
@@ -937,10 +937,10 @@ export const zhCN: Translations = {
           "首次连接需要在浏览器里完成一次飞书确认。打开下面的链接按提示完成；完成后回到这里继续授权。",
         openAuthLinkTitle: "在浏览器中完成飞书授权",
         openAuthLinkDescription:
-          "打开下面的链接完成授权。DeerFlow 会持续自动检测，并在授权通过后保存连接状态。",
+          "打开下面的链接完成授权。WRI AI 会持续自动检测，并在授权通过后保存连接状态。",
         waitingAuthTitle: "等待飞书授权完成",
         waitingAuthDescription:
-          "请在刚打开的浏览器页面完成授权。DeerFlow 会自动更新这里的状态；下方按钮只是兜底操作。",
+          "请在刚打开的浏览器页面完成授权。WRI AI 会自动更新这里的状态；下方按钮只是兜底操作。",
         openAuthLink: "打开链接",
         copyAuthLink: "复制链接",
         completeAuth: "我已完成授权",
@@ -965,7 +965,7 @@ export const zhCN: Translations = {
           "本次连接流程已向飞书验证当前用户授权。需要刷新授权或追加权限时，可重新连接。",
         authNextTitle: "下一步完成浏览器授权",
         authNextDescription:
-          "点击“连接飞书”后，DeerFlow 会先检查当前状态；未连接或授权过期时会拉起浏览器授权。",
+          "点击“连接飞书”后，WRI AI 会先检查当前状态；未连接或授权过期时会拉起浏览器授权。",
       },
     },
     skills: {
@@ -974,7 +974,7 @@ export const zhCN: Translations = {
       createSkill: "新建技能",
       emptyTitle: "还没有技能",
       emptyDescription:
-        "将你的 Agent Skill 文件夹放在 DeerFlow 根目录下的 `/skills/custom` 文件夹中。",
+        "将你的 Agent Skill 文件夹放在 WRI AI 根目录下的 `/skills/custom` 文件夹中。",
       emptyButton: "创建你的第一个技能",
       adminRequired: "需要管理员权限才能管理 Agent Skill。",
       installAdminRequired: "需要管理员权限才能安装 Agent Skill。",
@@ -982,12 +982,12 @@ export const zhCN: Translations = {
     notification: {
       title: "通知",
       description:
-        "DeerFlow 只会在窗口不活跃时发送完成通知，特别适合长时间任务：你可以先去做别的事，完成后会收到提醒。",
+        "WRI AI 只会在窗口不活跃时发送完成通知，特别适合长时间任务：你可以先去做别的事，完成后会收到提醒。",
       requestPermission: "请求通知权限",
       deniedHint:
         "通知权限已被拒绝。可在浏览器的网站设置中重新开启，以接收完成提醒。",
       testButton: "发送测试通知",
-      testTitle: "DeerFlow",
+      testTitle: "WRI AI",
       testBody: "这是一条测试通知。",
       notSupported: "当前浏览器不支持通知功能。",
       disableNotification: "关闭通知",
@@ -1001,7 +1001,7 @@ export const zhCN: Translations = {
       changePasswordDescription: "更新你的账号密码。",
       ssoPasswordDescription: "密码由你的 SSO 提供商管理。",
       ssoPasswordMessage:
-        "此账号通过 {provider} 登录，DeerFlow 无法在此管理或修改密码。请前往你的 SSO 提供商账号设置中进行操作。",
+        "此账号通过 {provider} 登录，WRI AI 无法在此管理或修改密码。请前往你的 SSO 提供商账号设置中进行操作。",
       currentPassword: "当前密码",
       newPassword: "新密码",
       confirmNewPassword: "确认新密码",
@@ -1027,7 +1027,7 @@ export const zhCN: Translations = {
     passwordPlaceholder: "•••••••",
     rememberMe: "保持登录",
     rememberMeDescription:
-      "下次打开 DeerFlow 时尽量保持当前会话，仅保存邮箱，不保存密码。",
+      "下次打开 WRI AI 时尽量保持当前会话，仅保存邮箱，不保存密码。",
     pleaseWait: "请稍候...",
     signIn: "登录",
     createAccount: "创建账号",
