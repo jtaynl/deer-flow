@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { getCsrfHeaders } from "@/core/api/fetcher";
 import { useAuth } from "@/core/auth/AuthProvider";
+import { useI18n } from "@/core/i18n/hooks";
 import { loadRememberLoginPreference } from "@/core/auth/remember-login";
 import {
   fetchSetupStatus,
@@ -17,7 +18,7 @@ import {
 } from "@/core/auth/setup";
 import { parseAuthError } from "@/core/auth/types";
 
-type SetupMode = "loading" | "init_admin" | "change_password";
+type SetupMode = "loading" | "init_admin" | "change_password" | "unavailable";
 
 function BrandHeader() {
   return (
@@ -60,7 +61,9 @@ function PageShell({ children }: { children: React.ReactNode }) {
 export default function SetupPage() {
   const router = useRouter();
   const { user, isAuthenticated } = useAuth();
+  const { t } = useI18n();
   const [mode, setMode] = useState<SetupMode>("loading");
+  const [setupStatusAttempt, setSetupStatusAttempt] = useState(0);
 
   const [email, setEmail] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -79,7 +82,9 @@ export default function SetupPage() {
     if (isAuthenticated && user?.needs_setup) {
       setMode("change_password");
     } else if (!isAuthenticated) {
-      // Check if the system has no users yet
+      // Check if the system has no users yet. A slow Gateway must not leave the
+      // setup page in an infinite loading state or silently redirect away.
+      setMode("loading");
       void fetchSetupStatus()
         .then((data: { needs_setup?: boolean }) => {
           if (cancelled) return;
@@ -91,7 +96,7 @@ export default function SetupPage() {
           }
         })
         .catch(() => {
-          if (!cancelled) router.replace("/login");
+          if (!cancelled) setMode("unavailable");
         });
     } else {
       // Authenticated but needs_setup is false — already set up
@@ -101,7 +106,7 @@ export default function SetupPage() {
     return () => {
       cancelled = true;
     };
-  }, [isAuthenticated, user, router]);
+  }, [isAuthenticated, user, router, setupStatusAttempt]);
 
   const handleInitAdmin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -193,6 +198,34 @@ export default function SetupPage() {
     return (
       <PageShell>
         <p className="text-center text-sm text-[#6b7280]">Loading…</p>
+      </PageShell>
+    );
+  }
+
+  // Upstream #4371: a slow/unreachable Gateway used to bounce silently to /login,
+  // which hid a real outage behind a redirect. Offer an explicit retry instead.
+  if (mode === "unavailable") {
+    return (
+      <PageShell>
+        <BrandHeader />
+        <div className="rounded-2xl border border-[#e5e7eb] bg-white p-8 shadow-sm">
+          <h1 className="text-2xl font-semibold tracking-tight text-[#0a1628]">
+            {t.login.serviceUnavailableTitle}
+          </h1>
+          <p className="mt-2 text-sm text-[#4b5563]">
+            {t.login.serviceUnavailableDescription}
+          </p>
+          <Button
+            type="button"
+            className="mt-6 h-11 w-full bg-[#7b1e2b] text-base font-semibold text-white hover:bg-[#9a2a39]"
+            onClick={() => {
+              setMode("loading");
+              setSetupStatusAttempt((attempt) => attempt + 1);
+            }}
+          >
+            {t.login.retry}
+          </Button>
+        </div>
       </PageShell>
     );
   }

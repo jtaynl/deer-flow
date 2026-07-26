@@ -70,7 +70,10 @@ export default function LoginPage() {
   const [setupStatus, setSetupStatus] = useState<SetupStatusResponse | null>(
     null,
   );
-  const [setupStatusChecked, setSetupStatusChecked] = useState(false);
+  const [setupStatusPhase, setSetupStatusPhase] = useState<
+    "checking" | "ready" | "unavailable"
+  >("checking");
+  const [setupStatusAttempt, setSetupStatusAttempt] = useState(0);
 
   // Extract error from query params (e.g., ?error=sso_failed)
   const errorParam = searchParams.get("error");
@@ -91,10 +94,15 @@ export default function LoginPage() {
   const nextParam = searchParams.get("next");
   const redirectPath = validateNextParam(nextParam) ?? "/workspace";
   const regularSignupAllowed = canCreateRegularAccount({
-    checked: setupStatusChecked,
+    // A failed probe must not expose registration while the system's setup
+    // state is unknown. Existing users can still sign in normally.
+    checked: setupStatusPhase === "ready",
     status: setupStatus,
   });
   const systemNeedsAdminSetup = setupStatus?.needs_setup === true;
+  const showSetupStatusUnavailable =
+    setupStatusPhase === "unavailable" ||
+    (setupStatusAttempt > 0 && setupStatusPhase === "checking");
 
   // Redirect if already authenticated (client-side, post-login)
   useEffect(() => {
@@ -115,10 +123,12 @@ export default function LoginPage() {
   useEffect(() => {
     let cancelled = false;
 
+    setSetupStatusPhase("checking");
     void fetchSetupStatus()
       .then((data) => {
         if (cancelled) return;
         setSetupStatus(data);
+        setSetupStatusPhase("ready");
         if (data.needs_setup) {
           setIsLogin(true);
         }
@@ -126,13 +136,19 @@ export default function LoginPage() {
       .catch(() => {
         if (!cancelled) {
           setSetupStatus(null);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setSetupStatusChecked(true);
+          setSetupStatusPhase("unavailable");
         }
       });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [setupStatusAttempt]);
+
+  // SSO providers are static for the page lifetime and should not be coupled to
+  // setup-status retries.
+  useEffect(() => {
+    let cancelled = false;
 
     // Fetch SSO providers (OIDC) — buttons render only when configured
     void fetch("/api/v1/auth/providers")
@@ -248,6 +264,39 @@ export default function LoginPage() {
               {isLogin ? t.login.signInTitle : t.login.createAccountTitle}
             </h1>
           </div>
+
+          {/* Upstream #4371: a slow/unreachable Gateway must offer a retry rather than
+              silently leaving the page in an unknown state. Styled to the WRI skin (amber
+              keeps it distinct from the maroon setup notice below). */}
+          {showSetupStatusUnavailable && (
+            <div
+              role="status"
+              aria-live="polite"
+              className="mt-4 rounded-md border-l-2 border-amber-500 bg-amber-50 px-3 py-2 text-sm"
+            >
+              <p className="font-medium text-[#0a1628]">
+                {t.login.serviceUnavailableTitle}
+              </p>
+              <p className="mt-1 text-[#4b5563]">
+                {t.login.serviceUnavailableDescription}
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="mt-3"
+                disabled={setupStatusPhase === "checking"}
+                onClick={() => {
+                  setSetupStatusPhase("checking");
+                  setSetupStatusAttempt((attempt) => attempt + 1);
+                }}
+              >
+                {setupStatusPhase === "checking"
+                  ? t.login.pleaseWait
+                  : t.login.retry}
+              </Button>
+            </div>
+          )}
 
           {systemNeedsAdminSetup && (
             <div className="mt-4 rounded-md border-l-2 border-[#7b1e2b] bg-[#fdf2f3] px-3 py-2 text-sm">
