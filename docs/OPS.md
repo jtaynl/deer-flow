@@ -471,8 +471,10 @@ git checkout local-fixes
     run state **in-process and per-worker**: `RunManager._runs` (each run's
     `asyncio.Task` + abort event) and the `MemoryStreamBridge` (per-run SSE
     event log) live in one worker's memory, and there is **no shared
-    cross-worker stream bridge** (our config uses the memory backend; the
-    redis path is `NotImplementedError`). nginx round-robins with **no sticky
+    cross-worker stream bridge** *in our deployment* — our config sets no
+    `stream_bridge` block, so we take the `memory` default (see note 20a for
+    why the redis backend, which upstream shipped on 2026-07-04, is stripped
+    rather than used). nginx round-robins with **no sticky
     sessions**, so with >1 worker a cancel/reconnect/SSE request has a high
     chance of landing on a worker that never saw the run → `cancel`/`join`
     return **HTTP 409 "not active on this worker"**, and an SSE reconnect
@@ -483,10 +485,41 @@ git checkout local-fixes
     eliminated the race (gateway memory fell ~662 MB → ~175 MB as a side
     effect). **`GATEWAY_WORKERS` is intentionally unset in `.env`** so we take
     that `:-1` default; a regression test (`test_compose_default_workers.py`)
-    pins it. Scale a single worker with **more CPU/RAM**, not more workers,
-    until upstream ships the shared stream bridge (tracked in #3191). The LGI
-    Stage-1 batch is unaffected by worker count (it uses `docker exec` →
-    embedded `DeerFlowClient`, bypassing the HTTP/RunManager/StreamBridge path).
+    pins it. Scale a single worker with **more CPU/RAM**, not more workers.
+    (Upstream's shared stream bridge, tracked in #3191, **has since shipped** —
+    2026-07-04, `72f033fb`. Raising `GATEWAY_WORKERS` is therefore no longer
+    *impossible*, just not free: it requires standing the redis container back
+    up, `stream_bridge.type: redis`, `sandbox.ownership.type: redis`, and the
+    `redis` uv extra. See note 20a.) The LGI Stage-1 batch is unaffected by
+    worker count (it uses `docker exec` → embedded `DeerFlowClient`, bypassing
+    the HTTP/RunManager/StreamBridge path).
+
+20a. **Why the redis container is stripped from `docker-compose.yaml`.**
+    Upstream added a `redis:7-alpine` service on **2026-07-04** with #3191
+    (`72f033fb`); we removed it the same day in `08a1a242`. Redis serves
+    exactly two consumers in deer-flow, and **both are cross-process
+    coordination primitives**: (1) the **stream bridge**
+    (`runtime/stream_bridge/redis.py`) — a shared SSE event log so any gateway
+    worker can serve a reconnect/cancel for a run started on another worker;
+    and (2) **sandbox ownership** (`community/aio_sandbox/ownership/redis.py`)
+    — so load-balanced gateway peers don't idle-destroy each other's live
+    sandboxes. **We run one gateway worker in one instance** (note 20), so
+    there is no second process for either to coordinate with. Both config keys
+    default to `memory` and our `config.yaml` sets neither, so the container
+    would have idled unused — while its `depends_on: {redis: service_healthy}`
+    gate still **blocked gateway startup** on it. Stripped: the `redis`
+    service, the `redis-data` volume, the gateway's
+    `DEER_FLOW_STREAM_BRIDGE_REDIS_URL` env, and the `depends_on` gate — plus
+    `redis` from `scripts/deploy.sh`'s `services` list (verified: 0 redis refs
+    there today). **No Python is patched** — this is a compose/deploy-script
+    removal only, and `UV_EXTRAS` stays `postgres` so the redis extra is never
+    installed. Upstream validates
+    this shape itself: the ownership factory logs `Sandbox ownership store:
+    memory (single-instance; ttl=…)` at boot, and #4206 documents memory mode
+    as *"Safe for a SINGLE gateway instance only — multi-worker/load-balanced
+    gateways … must set `sandbox.ownership.type: redis`."* **Un-strip trigger:
+    the day we want >1 gateway worker or >1 instance — nothing else.** Every
+    sync's 3a check asserts `NO redis/provisioner` in the running stack.
 
 21. **The IM-channels subsystem is always wired in, even with zero channels
     configured — and it auto-creates 4 Postgres tables on boot.** As of the
@@ -1063,7 +1096,7 @@ Both categories still conflict, so treat this list as the checklist after every 
 ### Deployment / infrastructure
 | Path | What we carry | Why |
 | --- | --- | --- |
-| `docker/docker-compose.yaml` | **redis-strip** — no redis/provisioner services | single-instance deployment; `sandbox.ownership.type: memory` is a first-class single-gateway mode (upstream says so itself at startup, `#4206`) |
+| `docker/docker-compose.yaml` + `scripts/deploy.sh` | **redis-strip** — no redis/provisioner services | single-instance deployment; `sandbox.ownership.type: memory` is a first-class single-gateway mode (upstream says so itself at startup, `#4206`). **Full rationale + un-strip trigger: note 20a.** Origin: `08a1a242`, 2026-07-04, same day upstream's `72f033fb` (#3191) added the service |
 | `backend/Dockerfile` | **readabilipy JS deps** + **Playwright MCP + chromium** (`PLAYWRIGHT_BROWSERS_PATH=/ms-playwright`, ~656 MB) | web-extraction + browser automation for the research path |
 | `.dockerignore` | excludes `backend/.deer-flow/` | keeps the 33 MB runtime memory store out of the build context |
 | `scripts/deploy.sh` | our deploy wrapper | instance-specific |
