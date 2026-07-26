@@ -1053,18 +1053,51 @@ Expect two JSON-RPC response lines — an `initialize` ack with
 
 ## Local patches currently carried on `local-fixes`
 
-Run `git log --oneline upstream/main..local-fixes` for the current list.
-**Zero runtime hotfixes are currently carrying** — all previous bug
-patches have been absorbed upstream:
+Authoritative list — regenerate the raw file set with
+`git diff --name-only upstream/main...local-fixes`.
 
-- `fix(task_tool): handle AsyncCallbackManager in _find_usage_recorder`
-  was absorbed on 2026-05-21 (merge into `e93f6584` introduced an
-  equivalent `isinstance(BaseCallbackManager)` check).
-- `fix(uploads): chmod uploaded files to 0644 so sandbox user can read`
-  was absorbed on 2026-05-25 (upstream `f9b70713` added
-  `_make_file_sandbox_readable()` plus a clean `SandboxProvider`
-  opt-out attribute; our follow-up `f83611f1` removed the now-redundant
-  inline chmod).
+**No runtime BUG hotfixes are carried** (the two we once had were absorbed upstream — see
+"Absorbed" below). Everything carried today is **deployment config** or the **WRI re-skin**.
+Both categories still conflict, so treat this list as the checklist after every sync.
+
+### Deployment / infrastructure
+| Path | What we carry | Why |
+| --- | --- | --- |
+| `docker/docker-compose.yaml` | **redis-strip** — no redis/provisioner services | single-instance deployment; `sandbox.ownership.type: memory` is a first-class single-gateway mode (upstream says so itself at startup, `#4206`) |
+| `backend/Dockerfile` | **readabilipy JS deps** + **Playwright MCP + chromium** (`PLAYWRIGHT_BROWSERS_PATH=/ms-playwright`, ~656 MB) | web-extraction + browser automation for the research path |
+| `.dockerignore` | excludes `backend/.deer-flow/` | keeps the 33 MB runtime memory store out of the build context |
+| `scripts/deploy.sh` | our deploy wrapper | instance-specific |
+| `backend/scripts/schema_sync.py` | schema-drift **read-only sentinel** (`5e75178e`) | alembic OWNS DDL; this only *reports* drift |
+| `backend/packages/harness/deerflow/agents/lead_agent/prompt.py` | a `<language>` block — always answer in the user's language, default English | our users are English-first |
+
+⚠ `.env` also carries `UV_EXTRAS=postgres` (gitignored, so it is NOT in the diff above — restore it by hand
+if the file is ever recreated). `config.yaml` is likewise gitignored/instance-only (models incl. `kimi-k3`).
+
+### WRI re-skin (the recurring conflict surface)
+| Path(s) | What we carry |
+| --- | --- |
+| `(auth)/login/page.tsx`, `(auth)/setup/page.tsx`, `(auth)/layout.tsx` | maroon `#7b1e2b` WRI skin + logo; **grafted upstream logic lives here too** — the remember-me control and `#4371`'s `setupStatusPhase` / `unavailable` mode |
+| **`core/i18n/locales/en-US.ts` + `zh-CN.ts`** | **49 UI strings say "WRI AI", not "DeerFlow"** (25 en + 24 zh, `8f25c2cf`/`448ec920`) — notification, channels, memory, IM-bot blurbs, Lark-OAuth flow, skill install, shortcuts, agent save/load, SSO notice, remember-me, notification `testTitle`. Plus the disclaimer → `AI can make mistakes` (`be0139fa`) |
+| `workspace/workspace-nav-menu.tsx` | nav **de-branding** — deerflow.tech / GitHub / issues / mailto links + the About item + Bug/Globe/Info/Mail/Github icons removed |
+| `workspace/workspace-header.tsx`, `workspace-container.tsx`, `settings/settings-dialog.tsx` | WRI chrome |
+| `settings/about-content.ts`, `about.md` | WRI About page — **deliberately credits** "WRI AI runs on the open-source DeerFlow framework from ByteDance" (correct attribution for MIT-licensed upstream work — do NOT strip) |
+| `app/page.tsx`, `app/layout.tsx`, `components/landing/**` (12 files) | WRI landing page |
+| `frontend/public/wri/**`, `robot/**`, `favicon.ico` (20 assets) | WRI icons/manifest |
+
+**DELIBERATELY NOT rebranded in either locale:** `officialWebsite`, `githubTooltip`, `visitGithub` — they
+factually reference `bytedance/deer-flow`, and their nav entries are already removed.
+
+**Post-sync checklist for the re-skin:** upstream edits these files often (they conflicted on 07-19 and
+07-26). After any sync that touches them: re-apply, rebuild, then verify —
+`grep -c DeerFlow frontend/src/core/i18n/locales/{en-US,zh-CN}.ts` should be **3 each**, and
+`/login` + `/setup` must return 200 with WRI branding and zero `deerflow.tech` references.
+
+### Absorbed upstream (no longer carried)
+- `fix(task_tool): handle AsyncCallbackManager in _find_usage_recorder` — absorbed 2026-05-21 (merge into
+  `e93f6584` introduced an equivalent `isinstance(BaseCallbackManager)` check).
+- `fix(uploads): chmod uploaded files to 0644 so sandbox user can read` — absorbed 2026-05-25 (upstream
+  `f9b70713` added `_make_file_sandbox_readable()` plus a clean `SandboxProvider` opt-out; our follow-up
+  `f83611f1` removed the redundant inline chmod).
 
 Most recent upstream sync: **2026-07-26 (later)** — **2 commits (`d1aeea2c`→`dd3c5a17`), CLEAN merge (0 conflicts), MIGRATION-FREE (head stays `0008`), NO CVE.** Merge `179f36a7`; `main` ff'd → `dd3c5a17`. Tiny follow-up batch: `#4383` fix(checkpoint) unwrap `Overwrite` first writes into empty channels (+ `backend/tests/test_checkpoint_patches.py`), and **next 16.2.6→16.2.11** (frontend patch bump, worth taking). `client.py` UNCHANGED; no consolidation commit → OFF; `config_version` unchanged. **All carried patches intact — incl. yesterday's `#4371` graft on the re-skinned login page** (`setupStatusPhase` present alongside the WRI `#7b1e2b` skin) and the nav de-branding (0 deerflow refs). **Verified (all green):** frontend build **`✓ Compiled successfully`** (also exercises the Next bump) → bootstrap `upgrade head (0008_thread_operation_kind)` (no new migration) → 0 boot errors, NO redis/provisioner, `:2026` 200 → **3b `schema in sync`** + consolidation OFF → **`chat()` kimi-k3/qwen3.7-plus/qwen3.7-max all `CHAT_OK`** → **3c Aio smoke** sandbox `e178c737` `SYNC726B_OK` → **`/login` + `/setup` 200, WRI-branded, 0 deerflow refs**. Rollback tag `pre-sync-20260726b` → `17562e8d` (drop post-push).
 
