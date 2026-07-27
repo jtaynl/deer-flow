@@ -482,6 +482,7 @@ export const zhCN: Translations = {
     startConversation: "开始新的对话以查看消息",
     branchCreated: "已创建分叉对话",
     branchFailed: "创建分叉对话失败。",
+    streamReplayGap: "部分实时更新已过期，已从持久化状态恢复对话。",
   },
 
   // Chats
@@ -602,6 +603,9 @@ export const zhCN: Translations = {
     otherPlaceholder: "输入其他回答...",
     submit: "提交",
     emptyError: "请输入回答后再提交。",
+    requiredError: "请填写所有必填字段后再提交。",
+    requiredA11yLabel: "必填",
+    selectPlaceholder: "请选择...",
     answeredValue: (value: string) => `已回答：${value}`,
   },
 

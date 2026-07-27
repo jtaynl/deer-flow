@@ -505,6 +505,8 @@ export const enUS: Translations = {
     startConversation: "Start a conversation to see messages here",
     branchCreated: "Conversation branch created",
     branchFailed: "Failed to branch conversation.",
+    streamReplayGap:
+      "Some live updates expired. The conversation was restored from saved state.",
   },
 
   // Chats
@@ -626,6 +628,9 @@ export const enUS: Translations = {
     otherPlaceholder: "Type another answer...",
     submit: "Submit",
     emptyError: "Enter an answer before submitting.",
+    requiredError: "Fill in all required fields before submitting.",
+    requiredA11yLabel: "required",
+    selectPlaceholder: "Select...",
     answeredValue: (value: string) => `Answered: ${value}`,
   },
 
