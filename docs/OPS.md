@@ -91,6 +91,18 @@ recreated.
 directly). **Do NOT rebase it**: a rebase would rewrite 200+ commits and force-push a
 destructive history. Merge instead (this is what every prior sync did).
 
+> ⚠ **`origin/main` auto-syncs to `upstream/main` on GitHub — a mismatch with your
+> LOCAL `main` is NORMAL and does NOT mean a push was lost.** Our fork's `main` tracks
+> bytedance/deer-flow automatically, so `origin/main` can be many commits ahead of the
+> local `main` at any time. **Local `main` deliberately marks the upstream tip we have
+> actually MERGED into `local-fixes`** — that is what makes `git log main..upstream/main`
+> the correct "what's new since our last sync" query. So: **never `git push origin main`
+> or fast-forward local `main` outside a real sync**, or you destroy that marker and the
+> next sync's commit range will silently under-report. (Diagnosed 2026-07-27 after
+> `origin/main` `e01173d8` vs local `main` `244ce773` briefly looked like a failed push.)
+> Corollary, already noted below: `git diff local-fixes..upstream/main` is misleading —
+> it shows OUR divergence as "touched". Use `main..upstream/main`.
+
 ```bash
 cd ~/deer-flow
 
