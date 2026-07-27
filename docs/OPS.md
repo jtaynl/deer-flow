@@ -96,10 +96,20 @@ destructive history. Merge instead (this is what every prior sync did).
 > bytedance/deer-flow automatically, so `origin/main` can be many commits ahead of the
 > local `main` at any time. **Local `main` deliberately marks the upstream tip we have
 > actually MERGED into `local-fixes`** — that is what makes `git log main..upstream/main`
-> the correct "what's new since our last sync" query. So: **never `git push origin main`
-> or fast-forward local `main` outside a real sync**, or you destroy that marker and the
-> next sync's commit range will silently under-report. (Diagnosed 2026-07-27 after
-> `origin/main` `e01173d8` vs local `main` `244ce773` briefly looked like a failed push.)
+> the correct "what's new since our last sync" query. So: **never fast-forward local `main`
+> outside a real sync**, or you destroy that marker and the next sync's commit range will
+> silently under-report. (Diagnosed 2026-07-27 after `origin/main` `e01173d8` vs local
+> `main` `244ce773` briefly looked like a failed push.)
+>
+> ⚠⚠ **DO NOT `git push origin main` — drop it from the sync routine.** It is both
+> unnecessary (the fork auto-syncs, so `origin/main` already contains whatever you merged)
+> and *actively fails*: once the fork has auto-synced past your merged tip the push is
+> **rejected non-fast-forward**. Observed on the 2026-07-27 sync — it was rejected because
+> `origin/main` had already advanced to `62b73fd2`, two commits past our merged `b22f85c6`.
+> **The rejection is harmless**; confirm with
+> `git merge-base --is-ancestor <merged-tip> origin/main` (exit 0 = origin already contains
+> it). **Push only `local-fixes`** — that branch is ours; `main` is a local bookmark.
+>
 > Corollary, already noted below: `git diff local-fixes..upstream/main` is misleading —
 > it shows OUR divergence as "touched". Use `main..upstream/main`.
 
