@@ -28,6 +28,12 @@ backend/scripts/benchmark/*.jsonl
 
 # Environment variables
 .env
+# .env holds live API keys. The bare pattern above matches only that exact name,
+# so a dated backup (.env.bak-<reason>-<date>) was NOT ignored. Cover backups
+# without swallowing the tracked .env.example.
+.env.bak*
+.env.local
+.env.*.local
 
 # Configuration files
 config.yaml

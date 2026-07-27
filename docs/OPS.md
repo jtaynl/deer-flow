@@ -193,6 +193,35 @@ git checkout local-fixes
    `uv sync`. Without it the gateway crashes at startup with
    `ImportError: asyncpg is not installed`.
 
+7a. **`GATEWAY_ENABLE_DOCS=false` in `.env`** — set **2026-07-27**. ⚠ **`.env` is
+   gitignored, so this is INSTANCE-ONLY and will NOT come back from a `git clone`
+   — a droplet rebuild silently reverts to docs-ENABLED unless you re-add it.**
+   It disables the Gateway's Swagger UI (`/docs`), ReDoc (`/redoc`) and OpenAPI
+   schema (`/openapi.json`). Read once at startup (`app/gateway/config.py:24`,
+   default `"true"`) and consumed at `app/gateway/app.py:384-386`, which simply
+   passes `None` for those three URLs so FastAPI never mounts them.
+   **Why off:** all three sit in `app/gateway/auth_middleware.py`'s
+   `_PUBLIC_PATH_PREFIXES` — *"Paths that never require authentication"* — so they
+   **bypass Gateway auth entirely** and were protected by the Caddy basic-auth layer
+   alone. `/openapi.json` in particular is a complete machine-readable inventory of
+   every route/parameter/schema, including admin and internal routes. Upstream's own
+   `backend/AGENTS.md` recommends `false` in production.
+   **Nothing consumes them** (verified by grep across the frontend, backend,
+   `~/lgi-pipeline` and `~/worldresearch-intelligence`): the LGI pipeline uses the
+   **embedded** `DeerFlowClient` via `docker exec` and never touches Gateway HTTP,
+   and the frontend calls `/api/langgraph/*` + `/api/*` directly rather than reading
+   the schema. This was defence-in-depth, **not** a live exposure — the whole site
+   returns 401 publicly.
+   ⚠ **`env_file:` is read at container CREATE time — `docker restart` does NOT pick
+   up an `.env` change. Use `make up`.** No `docker-compose.yaml` edit is needed
+   (the gateway service already does `env_file: ../.env`), which deliberately avoids
+   a second carried patch on a file upstream actively edits.
+   **Verified:** `/docs` `/redoc` `/openapi.json` → **404**, while `/health` → 200 and
+   real routes stay mounted-and-protected (`/api/models`, `/api/v1/auth/me` → **401**,
+   not 404). To browse the API interactively again: set `true` and `make up`.
+   ℹ️ Unrelated to this flag: `/en/docs` (title "DeerFlow Documentation") is upstream's
+   **Next.js nextra** docs site, a frontend route this env var does not affect.
+
 8. **`make doctor` is host-only.** It validates `make dev` (local-Python)
    prereqs: pnpm, node, nginx on the host, plus `.env`/`config.yaml` at
    host-relative paths. None of those checks are useful for Docker
