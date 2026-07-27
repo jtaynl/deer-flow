@@ -550,7 +550,7 @@ export const zhCN: Translations = {
       feishu: "通过 WRI AI 应用接收飞书和 Lark 消息。",
       dingtalk: "通过 WRI AI Bot 接收钉钉 Stream Push 消息。",
       wechat: "通过 WRI AI Bot 接收微信 iLink 消息。",
-      wecom: "通过 WRI AI AI Bot 接收企业微信消息。",
+      wecom: "通过 WRI AI Bot 接收企业微信消息。",
     },
     connectedAs: (name: string) => `已连接为 ${name}。`,
   },

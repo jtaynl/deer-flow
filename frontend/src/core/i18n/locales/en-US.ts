@@ -573,7 +573,7 @@ export const enUS: Translations = {
       feishu: "Feishu and Lark messages through your WRI AI app.",
       dingtalk: "DingTalk Stream Push messages through your WRI AI bot.",
       wechat: "WeChat iLink messages through your WRI AI bot.",
-      wecom: "WeCom messages through your WRI AI AI bot.",
+      wecom: "WeCom messages through your WRI AI bot.",
     },
     connectedAs: (name: string) => `Connected as ${name}.`,
   },
