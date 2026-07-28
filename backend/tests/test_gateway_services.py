@@ -726,6 +726,62 @@ def test_build_checkpoint_state_accessor_uses_frozen_mode_and_binds_runtime_pers
         assert config["configurable"]["checkpoint_id"] == checkpoint_id
 
 
+def test_state_accessor_graph_cache_keys_on_snapshot_frequency():
+    """The accessor-graph cache must not serve a graph compiled at a different
+    delta snapshot cadence."""
+    from app.gateway import services as gateway_services
+
+    builds = []
+
+    def fake_factory(*, config):
+        graph = object()
+        builds.append(graph)
+        return graph
+
+    gateway_services._state_accessor_graph_cache.clear()
+    try:
+        first = gateway_services._state_accessor_graph(fake_factory, None, "delta", 1000, {})
+        again = gateway_services._state_accessor_graph(fake_factory, None, "delta", 1000, {})
+        assert again is first
+        assert len(builds) == 1
+
+        other_cadence = gateway_services._state_accessor_graph(fake_factory, None, "delta", 250, {})
+        assert other_cadence is not first
+        assert len(builds) == 2
+    finally:
+        gateway_services._state_accessor_graph_cache.clear()
+
+
+def test_state_accessor_graph_cache_honors_configured_cap():
+    """database.checkpoint_graph_cache.accessor_graph_max bounds the cache;
+    it is re-read per eviction check (hot-reloadable)."""
+    from types import SimpleNamespace
+
+    from app.gateway import services as gateway_services
+
+    builds = []
+
+    def fake_factory(*, config):
+        graph = object()
+        builds.append(graph)
+        return graph
+
+    app_config = SimpleNamespace(database=SimpleNamespace(checkpoint_graph_cache=SimpleNamespace(accessor_graph_max=2)))
+    config = {"context": {"app_config": app_config}}
+
+    gateway_services._state_accessor_graph_cache.clear()
+    try:
+        gateway_services._state_accessor_graph(fake_factory, "a", "full", None, config)
+        gateway_services._state_accessor_graph(fake_factory, "b", "full", None, config)
+        assert len(builds) == 2
+        # Third distinct key exceeds the configured cap of 2: wholesale clear.
+        gateway_services._state_accessor_graph(fake_factory, "c", "full", None, config)
+        assert len(gateway_services._state_accessor_graph_cache) == 1
+        assert len(builds) == 3
+    finally:
+        gateway_services._state_accessor_graph_cache.clear()
+
+
 def test_build_run_config_configurable_custom_agent_dual_writes_agent_name():
     """Regression for issue #3549: even when the caller uses the legacy
     ``configurable`` path, ``agent_name`` must also land in
@@ -1748,8 +1804,8 @@ def test_start_run_stamps_internal_owner_guardrail_attribution(_stub_app_config)
 
 def test_start_run_session_caller_anti_forgery(_stub_app_config):
     """A session (non-internal) caller cannot forge is_internal, authz_attributes,
-    or channel_user_id via body.config. Exercises the real start_run path, not
-    a replay, so ordering or gating drift would be caught."""
+    channel_user_id, or LangGraph Server auth identity via body.config. Exercises
+    the real start_run path, not a replay, so ordering or gating drift is caught."""
     import asyncio
     from types import SimpleNamespace
     from unittest.mock import patch
@@ -1792,6 +1848,8 @@ def test_start_run_session_caller_anti_forgery(_stub_app_config):
                     "is_internal": True,
                     "authz_attributes": {"forged": True},
                     "channel_user_id": "forged-sender",
+                    "langgraph_auth_user": {"identity": "forged-user"},
+                    "langgraph_auth_user_id": "forged-user",
                 },
                 "configurable": {
                     "is_internal": True,
@@ -1828,6 +1886,9 @@ def test_start_run_session_caller_anti_forgery(_stub_app_config):
     assert "authz_attributes" not in context
     # channel_user_id must not survive from body.config for a session caller
     assert context.get("channel_user_id") is None
+    # Agent Server's reserved auth fields are never valid on the Gateway path.
+    assert context.get("langgraph_auth_user") is None
+    assert context.get("langgraph_auth_user_id") is None
 
 
 def test_launch_scheduled_thread_run_marks_context_non_interactive(_stub_app_config):
@@ -2093,6 +2154,14 @@ class TestInjectAuthenticatedUserContextAuthz:
         request = _make_request_with_auth_source("session")
         config = _assemble_authz_run_config({"configurable": {"authz_attributes": {"forged": True}}}, request)
         assert "authz_attributes" not in config["configurable"]
+
+    @pytest.mark.parametrize("section", ["context", "configurable"])
+    @pytest.mark.parametrize("key", ["langgraph_auth_user", "langgraph_auth_user_id"])
+    def test_clears_forged_langgraph_auth_identity(self, section, key):
+        """Gateway clients cannot inject Agent Server's reserved auth fields."""
+        request = _make_request_with_auth_source("session")
+        config = _assemble_authz_run_config({section: {key: "forged-user"}}, request)
+        assert key not in config[section]
 
     def test_internal_auth_source_writes_is_internal_true(self):
         """Internal caller gets is_internal=True."""
