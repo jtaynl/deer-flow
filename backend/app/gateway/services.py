@@ -61,7 +61,11 @@ from deerflow.runtime.checkpoint_mode import (
 from deerflow.runtime.checkpoint_state import graph_state_schema
 from deerflow.runtime.goal import goal_thread_lock
 from deerflow.runtime.runs.naming import resolve_root_run_name
-from deerflow.runtime.secret_context import redact_config_secrets
+from deerflow.runtime.secret_context import (
+    LegacyRunMetadataSecretError,
+    redact_config_secrets,
+    validate_run_metadata_secrets,
+)
 from deerflow.runtime.stream_modes import normalize_stream_modes
 from deerflow.runtime.user_context import reset_current_user, set_current_user
 from deerflow.utils.messages import ORIGINAL_USER_CONTENT_KEY
@@ -978,6 +982,14 @@ async def start_run(
     request : Request
         FastAPI request — used to retrieve singletons from ``app.state``.
     """
+    body_config = getattr(body, "config", None)
+    config_metadata = body_config.get("metadata") if isinstance(body_config, dict) else None
+    try:
+        validate_run_metadata_secrets(getattr(body, "metadata", None))
+        validate_run_metadata_secrets(config_metadata)
+    except LegacyRunMetadataSecretError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
     stream_modes = normalize_stream_modes(body.stream_mode)
     bridge = get_stream_bridge(request)
     run_mgr = get_run_manager(request)
@@ -1271,10 +1283,10 @@ async def sse_consumer(
             yield format_sse(entry.event, entry.data, event_id=entry.id or None)
 
     finally:
-        # store_only records are cross-worker runs hydrated from the RunStore; this
-        # worker holds no in-memory task/abort state for them, so run_mgr.cancel()
-        # cannot stop the task (it would 409). Skip on_disconnect cancellation for
-        # those and only act on runs this worker actually owns.
+        # store_only records are cross-worker observation handles. An explicit
+        # cancel-then-stream action has already persisted its request before
+        # subscribing; a plain join disconnect must not invent a new
+        # cancellation request. Only apply on_disconnect to locally-owned runs.
         if not gap_emitted and not record.store_only and record.status in (RunStatus.pending, RunStatus.running):
             if record.on_disconnect == DisconnectMode.cancel:
                 await run_mgr.cancel(record.run_id)

@@ -38,7 +38,9 @@ from app.gateway.pagination import trim_run_message_page
 from app.gateway.run_models import RunCreateRequest
 from app.gateway.services import build_checkpoint_state_accessor, build_thread_checkpoint_state_accessor, sse_consumer, start_run, wait_for_run_completion
 from app.gateway.utils import sanitize_log_param
+from deerflow.agents.middlewares.dynamic_context_middleware import strip_injected_user_message_id_suffix
 from deerflow.runtime import CancelOutcome, RunRecord, RunStatus, serialize_channel_values_for_api
+from deerflow.runtime.secret_context import redact_config_secrets, redact_metadata_secrets
 from deerflow.utils.messages import ORIGINAL_USER_CONTENT_KEY, get_original_user_content_text, message_to_text
 from deerflow.workspace_changes import get_workspace_changes_response
 
@@ -213,13 +215,17 @@ async def _raise_lease_valid_elsewhere(
 
 
 def _record_to_response(record: RunRecord) -> RunResponse:
+    kwargs = dict(record.kwargs or {})
+    if "config" in kwargs:
+        kwargs["config"] = redact_config_secrets(kwargs["config"])
+
     return RunResponse(
         run_id=record.run_id,
         thread_id=record.thread_id,
         assistant_id=record.assistant_id,
         status=record.status.value,
-        metadata=record.metadata,
-        kwargs=record.kwargs,
+        metadata=redact_metadata_secrets(record.metadata),
+        kwargs=kwargs,
         multitask_strategy=record.multitask_strategy,
         created_at=record.created_at,
         updated_at=record.updated_at,
@@ -339,7 +345,12 @@ def _clean_human_message_for_regenerate(message: Any) -> dict[str, Any]:
         "content": [{"type": "text", "text": content}],
         "additional_kwargs": additional_kwargs,
     }
-    message_id = _message_id(message)
+    # Replay the id the client originally sent. The dynamic-context reminder
+    # re-keys the first user message of a thread to `{id}__user`, and replaying
+    # that persisted id into a state that has no reminder yet makes the
+    # middleware treat the turn as already injected, silently dropping the date
+    # and memory block the original turn had.
+    message_id = strip_injected_user_message_id_suffix(_message_id(message))
     if message_id:
         clean_message["id"] = message_id
     name = _message_name(message)
@@ -648,7 +659,12 @@ async def _prepare_edit_regenerate_payload(
     if not source_ai_id:
         raise HTTPException(status_code=409, detail="The source assistant message is missing an id")
 
-    base_checkpoint_tuple = await _find_base_checkpoint_before_human(thread_id, source_human_id, request)
+    base_checkpoint_tuple = await _find_base_checkpoint_before_human(
+        thread_id,
+        source_human_id,
+        request,
+        head_checkpoint=latest_checkpoint,
+    )
     target_run_id = await _find_target_run_id(thread_id, source_ai_id, source_ai, source_human, request)
     source_record = await _require_successful_source_run(thread_id, target_run_id, request)
     checkpoint = _checkpoint_response(base_checkpoint_tuple)
@@ -834,8 +850,8 @@ async def cancel_run(
     - wait=false: Return immediately with 202
 
     In multi-worker deployments, a cancel landing on a non-owning worker
-    can take over the run when the owner's lease has expired.  When the
-    lease is still valid a 409 + ``Retry-After`` header is returned.
+    durably notifies the owner when its lease is live, or takes over and
+    terminalizes the run when that lease has expired.
     """
     run_mgr = get_run_manager(request)
     record = await run_mgr.get(run_id)
@@ -844,15 +860,30 @@ async def cancel_run(
 
     outcome = await run_mgr.cancel(run_id, action=action)
 
-    # Success paths — the run was either cancelled locally or taken over
-    # from a dead worker.
-    if outcome in (CancelOutcome.cancelled, CancelOutcome.taken_over):
+    # Success paths — the run was cancelled locally, durably requested from
+    # a live owner, or taken over from a dead worker.
+    if outcome in (
+        CancelOutcome.cancelled,
+        CancelOutcome.requested,
+        CancelOutcome.taken_over,
+    ):
         if wait and record.task is not None:
             try:
                 await record.task
             except asyncio.CancelledError:
                 pass
             return Response(status_code=204)
+        if wait and outcome == CancelOutcome.requested:
+            bridge = get_stream_bridge(request)
+            if record.store_only and bridge.supports_cross_process:
+                completed = await wait_for_run_completion(
+                    bridge,
+                    record,
+                    request,
+                    run_mgr,
+                )
+                if completed:
+                    return Response(status_code=204)
         return Response(status_code=202)
 
     if outcome == CancelOutcome.lease_valid_elsewhere:
@@ -923,16 +954,29 @@ async def stream_existing_run(
             # the client doesn't hang on an SSE subscription this worker can
             # never serve.
             return Response(status_code=202)
-        if outcome != CancelOutcome.cancelled:
+        if outcome not in (CancelOutcome.cancelled, CancelOutcome.requested):
             if outcome == CancelOutcome.lease_valid_elsewhere:
                 await _raise_lease_valid_elsewhere(run_id, run_mgr, record)
             raise HTTPException(status_code=409, detail=_cancel_conflict_detail(run_id, record))
+        if outcome == CancelOutcome.requested and record.store_only and not bridge.supports_cross_process:
+            # The request is durable, but this bridge cannot observe the
+            # owner's stream. Returning 202 is safer than hanging forever on
+            # a process-local subscription.
+            return Response(status_code=202)
         if wait and record.task is not None:
             try:
                 await record.task
             except (asyncio.CancelledError, Exception):
                 pass
             return Response(status_code=204)
+        if wait and outcome == CancelOutcome.requested:
+            completed = await wait_for_run_completion(
+                bridge,
+                record,
+                request,
+                run_mgr,
+            )
+            return Response(status_code=204 if completed else 202)
 
     return StreamingResponse(
         sse_consumer(bridge, record, request, run_mgr),
@@ -1300,7 +1344,23 @@ async def list_run_events(
     """
     event_store = get_run_event_store(request)
     types = event_types.split(",") if event_types else None
-    return await event_store.list_events(thread_id, run_id, event_types=types, task_id=task_id, limit=limit, after_seq=after_seq)
+    events = await event_store.list_events(
+        thread_id,
+        run_id,
+        event_types=types,
+        task_id=task_id,
+        limit=limit,
+        after_seq=after_seq,
+    )
+    return [
+        {
+            **event,
+            "metadata": redact_metadata_secrets(event.get("metadata")),
+        }
+        if isinstance(event, dict) and "metadata" in event
+        else event
+        for event in events
+    ]
 
 
 @router.get("/{thread_id}/runs/{run_id}/workspace-changes")
