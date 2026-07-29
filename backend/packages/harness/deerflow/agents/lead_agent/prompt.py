@@ -749,6 +749,7 @@ def _get_memory_context(
     Returns:
         Formatted memory context string wrapped in XML tags, or empty string if disabled.
     """
+    config = None
     try:
         from deerflow.agents.memory import get_memory_manager
         from deerflow.runtime.user_context import resolve_runtime_user_id
@@ -775,8 +776,13 @@ def _get_memory_context(
 {memory_content}
 </memory>
 """
-    except Exception:
+    except Exception as exc:
         logger.exception("Failed to load memory context")
+        from deerflow.agents.memory import MemoryManagerError
+
+        failure_policy = getattr(config, "backend_config", {}).get("failure_policy", {}) if config is not None else {}
+        if isinstance(exc, MemoryManagerError) and failure_policy.get("read") == "fail_closed":
+            raise
         return ""
 
 
@@ -1005,8 +1011,8 @@ def _build_memory_tool_section(*, app_config: AppConfig | None = None) -> str:
         return ""
 
     return """<memory_tool_system>
-Memory is running in tool mode. Use the injected <memory> block as current context, and use the memory tools to keep durable user memory accurate:
-- Call `memory_search` before relying on memory that may be absent, stale, or too broad for the injected context.
+Memory is running in tool mode. When present, the injected <memory> block contains only global user and history summaries; agent facts are not injected automatically. Use the memory tools to keep durable user memory accurate:
+- Call `memory_search` whenever prior preferences, constraints, corrections, or durable context may be relevant. Do not assume an absent fact does not exist until you have searched with an appropriate query.
 - Call `memory_add` only for stable facts useful in future sessions: explicit user preferences, corrections, personal/work context, or durable project context.
 - Call `memory_update` when an existing fact is outdated or imprecise; prefer updating over adding a near-duplicate.
 - Call `memory_delete` only when a fact is clearly wrong or no longer relevant.
