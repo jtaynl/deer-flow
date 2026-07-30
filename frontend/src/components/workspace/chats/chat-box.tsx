@@ -1,7 +1,11 @@
 import { FilesIcon, XIcon } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { type PanelSize, usePanelRef } from "react-resizable-panels";
+import {
+  type Layout,
+  type PanelSize,
+  usePanelRef,
+} from "react-resizable-panels";
 
 import { ConversationEmptyState } from "@/components/ai-elements/conversation";
 import { Button } from "@/components/ui/button";
@@ -68,11 +72,12 @@ const ChatBox: React.FC<{
     if (threadIdRef.current !== threadId) {
       threadIdRef.current = threadId;
       deselect();
-      setArtifacts([]);
     }
 
     // Update artifacts from the current thread
-    if (threadArtifacts) {
+    // An empty initial state must not erase artifacts restored by the provider
+    // before the persisted thread state has arrived.
+    if (threadArtifacts && threadArtifacts.length > 0) {
       setArtifacts(threadArtifacts);
     }
 
@@ -150,19 +155,25 @@ const ChatBox: React.FC<{
     rightPanelOpen ? RIGHT_PANEL_DEFAULT_SIZE : "0%",
   );
 
-  const handleSidePanelResize = useCallback(
-    (size: PanelSize) => {
-      if (!rightPanelOpenRef.current) {
-        return;
-      }
-      if (size.asPercentage > 0) {
-        openSizeRef.current = `${size.asPercentage}%`;
+  const handleSidePanelResize = useCallback((size: PanelSize) => {
+    if (!rightPanelOpenRef.current || size.asPercentage <= 0) {
+      return;
+    }
+    openSizeRef.current = `${size.asPercentage}%`;
+  }, []);
+
+  const handlePanelGroupLayoutChanged = useCallback(
+    (layout: Layout) => {
+      if (
+        !rightPanelOpenRef.current ||
+        layout[`${resizableIdBase}-side`] !== 0
+      ) {
         return;
       }
 
-      // Dragging a collapsible panel below its minimum snaps it to 0% without
-      // updating the state that owns the panel. Treat that as a normal close so
-      // its trigger can reopen it at the last non-zero size.
+      // Finalize a drag-collapse only after the pointer is released. Closing
+      // from onResize at the first 0% frame would break a continuous gesture
+      // that reaches the edge and then reverses before release.
       if (activeRightPanel === "sidecar") {
         sidecar?.close();
       } else if (activeRightPanel === "browser") {
@@ -171,7 +182,7 @@ const ChatBox: React.FC<{
         setArtifactsOpen(false);
       }
     },
-    [activeRightPanel, browserView, setArtifactsOpen, sidecar],
+    [activeRightPanel, browserView, resizableIdBase, setArtifactsOpen, sidecar],
   );
 
   useEffect(() => {
@@ -350,6 +361,7 @@ const ChatBox: React.FC<{
     <ResizablePanelGroup
       id={`${resizableIdBase}-group`}
       orientation="horizontal"
+      onLayoutChanged={handlePanelGroupLayoutChanged}
       className={cn(
         "[container-type:inline-size] size-full min-h-0",
         // The sized flex item is the library's own `[data-panel]` element, not
