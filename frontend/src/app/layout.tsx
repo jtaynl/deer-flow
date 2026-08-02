@@ -1,12 +1,9 @@
-import "katex/dist/katex.min.css";
-import "streamdown/styles.css";
 import "@/styles/globals.css";
 
 import { type Metadata } from "next";
 
 import { ThemeProvider } from "@/components/theme-provider";
-import { I18nProvider } from "@/core/i18n/context";
-import { detectLocaleServer } from "@/core/i18n/server";
+import { DEFAULT_LOCALE } from "@/core/i18n/locale";
 
 export const metadata: Metadata = {
   title: "WRI AI — Intelligence Assistant by World Research Institute",
@@ -22,15 +19,18 @@ export const metadata: Metadata = {
   manifest: "/wri/site.webmanifest",
 };
 
-export default async function RootLayout({
+export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  const locale = await detectLocaleServer();
   return (
-    <html lang={locale} suppressContentEditableWarning suppressHydrationWarning>
+    <html
+      lang={DEFAULT_LOCALE}
+      suppressContentEditableWarning
+      suppressHydrationWarning
+    >
       <body>
         <ThemeProvider attribute="class" enableSystem disableTransitionOnChange>
-          <I18nProvider initialLocale={locale}>{children}</I18nProvider>
+          {children}
         </ThemeProvider>
       </body>
     </html>
