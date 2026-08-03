@@ -896,6 +896,38 @@ Either way, the international DashScope endpoint
 endpoint (`dashscope.aliyuncs.com`) needs a different key. The two are
 not interchangeable.
 
+**`qwen3.8-max` — added 2026-08-03.** Same Bailian token-plan endpoint
+and quota pool as the 3.6/3.7 family (`$BAILIAN_API_KEY`, no new key or
+subscription). Config block is identical in shape to `qwen3.7-max`, with
+one deliberate difference: `max_tokens: 65536`.
+
+Everything about it was **probed against the live endpoint before the
+config was written**, not inferred from the family:
+
+- `/models` lists **both** `qwen3.8-max` and `qwen3.8-max-preview`. We pin
+  the stable slug — so unlike `qwen3.7-max` (still preview-only), the
+  rename/removal caveat above does **not** apply to 3.8.
+- The `enable_thinking` toggle behaves exactly as in 3.6/3.7:
+  `true` → `reasoning_content` populated, `false` → absent, clean content.
+- ⚠ **Thinking is ON BY DEFAULT** — a call with no flag at all still
+  returned `reasoning_content` (121 chars). Harmless through DeerFlow
+  because the `when_thinking_*` blocks always send the flag explicitly,
+  but it will surprise anything that calls this endpoint directly.
+- **`max_tokens` ceiling is 65536**, double the 32768 the 3.7 entries use:
+  131072 is rejected with `Range of max_tokens should be [1, 65536]`.
+  Set to the true ceiling — it is a cap, not an allocation.
+
+Verified end-to-end through `DeerFlowClient.chat()` (the path Stage 1
+uses, not just curl): thinking-off → `Q38_OK`; thinking-on → correct
+arithmetic; and a **sandbox tool-using turn** → `Q38_TOOL_OK`, since
+model wiring errors frequently surface only once tools are in play.
+`models[0]` is still `deepseek-v4-pro`, so the `#4540` "resolve `None` to
+`models[0]`" path is unchanged.
+
+⚠ `config.yaml` is **gitignored/instance-only**, so this model entry is
+NOT in git and a droplet rebuild loses it along with the two pins —
+re-add it from this section.
+
 ### MiMo (Xiaomi) via `PatchedChatMiMo` adapter
 
 Xiaomi's MiMo reasoning model family (mimo-v2.5-pro, mimo-v2.5, mimo-v2-pro,
