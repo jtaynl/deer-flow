@@ -599,6 +599,7 @@ export const enUS: Translations = {
     saveAndConnect: "Save and connect",
     saveChanges: "Save changes",
     descriptions: {
+      buzz: "Buzz channels and direct messages through your WRI AI agent.",
       telegram: "Telegram direct messages through your WRI AI bot.",
       slack: "Slack workspace messages and mentions.",
       discord: "Discord server messages through your WRI AI bot.",
@@ -909,6 +910,20 @@ export const enUS: Translations = {
         requestPermissions: "Request permissions",
         alreadyConnected:
           "Lark is already connected. If authorization expires, refresh the status and reconnect.",
+        changeAppButton: "Change Lark app",
+        changeAppTitle: "Switch to a different Lark app",
+        changeAppDescription:
+          "Point your WRI AI account at a different Lark/Feishu app. This only affects your account; other users are not changed.",
+        changeAppIdLabel: "App ID",
+        changeAppSecretLabel: "App Secret",
+        changeAppAuthResetNote:
+          "Switching revokes the previous app's authorization. You will authorize the new app next.",
+        changeAppSubmit: "Switch app",
+        changeAppReRegister: "Re-register in browser",
+        changeAppSwitched:
+          "Lark app switched. Reconnect to authorize the new app.",
+        brandFeishu: "Feishu",
+        brandLark: "Lark",
         connectionStarted: "Connection link opened",
         connectionReady: "Connection is ready. Opening authorization...",
         authStarted:
