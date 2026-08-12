@@ -125,6 +125,12 @@ ARG PLAYWRIGHT_MCP_VERSION=0.0.75
 RUN apt-get update \
     && npm install -g @playwright/mcp@${PLAYWRIGHT_MCP_VERSION} playwright \
     && npx playwright install --with-deps chromium \
+    # The MCP bundles its OWN playwright (0.0.75 -> 1.61.0-alpha) whose browser registry does NOT
+    # match whatever browser build the unpinned stable `playwright` above installs. Caught live
+    # 2026-08-12: the MCP failed every browser call with 'Browser "chrome-for-testing" is not
+    # installed' while chromium-1234 sat unused in /ms-playwright. Install the browser through the
+    # MCP's own entry point so the registry always matches the bundled version, whatever it is.
+    && npx -y @playwright/mcp@${PLAYWRIGHT_MCP_VERSION} install-browser chrome-for-testing \
     && rm -rf /var/lib/apt/lists/* /root/.npm
 
 # Install uv (source image overridable via UV_IMAGE build arg)
