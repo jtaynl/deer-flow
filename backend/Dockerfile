@@ -132,6 +132,11 @@ RUN apt-get update \
     # installed' while chromium-1234 sat unused in /ms-playwright. Install the browser through the
     # MCP's own entry point so the registry always matches the bundled version, whatever it is.
     && npx -y @playwright/mcp@${PLAYWRIGHT_MCP_VERSION} install-browser chrome-for-testing \
+    # The MCP SDK spawns stdio servers with a MINIMAL default env — PLAYWRIGHT_BROWSERS_PATH does not
+    # reach the child (proven 2026-08-16: empty-env spawn -> "chrome-for-testing is not installed",
+    # env-with-path -> LAUNCH-OK). Symlink the default per-user registry path to the shared install so
+    # an env-less spawn finds the browsers regardless of who spawns it.
+    && mkdir -p /root/.cache && ln -sfn /ms-playwright /root/.cache/ms-playwright \
     && rm -rf /var/lib/apt/lists/* /root/.npm
 
 # Install uv (source image overridable via UV_IMAGE build arg)
