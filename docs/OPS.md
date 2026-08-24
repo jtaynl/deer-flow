@@ -42,7 +42,10 @@ fresh login is required to pick up the group, otherwise wrap commands with
 ├── .env                        secrets + env vars (chmod 600)
 ├── docker/.env → ../.env       SYMLINK — compose substitution reads this
 ├── config.yaml                 active config (bind-mounted into gateway, RO)
-├── extensions_config.json      MCP + skills enable map (bind-mounted RO)
+├── extensions_config.json      MCP + skills enable map (bind-mounted RW since #4852 sync
+│                               2026-08-24 — Gateway API writes it for MCP/skill toggles;
+│                               ⚠ our playwright `env` block is LOAD-BEARING: re-verify it
+│                               after ANY toggle via UI/API)
 └── backend/.deer-flow/         persistent data (BETTER_AUTH_SECRET, per-user dirs)
 ```
 
@@ -1198,7 +1201,7 @@ if the file is ever recreated). `config.yaml` is likewise gitignored/instance-on
 | Path(s) | What we carry |
 | --- | --- |
 | `(auth)/login/page.tsx`, `(auth)/setup/page.tsx`, `(auth)/layout.tsx` | maroon `#7b1e2b` WRI skin + logo; **grafted upstream logic lives here too** — the remember-me control and `#4371`'s `setupStatusPhase` / `unavailable` mode |
-| **`core/i18n/locales/en-US.ts` + `zh-CN.ts`** | **49 UI strings say "WRI AI", not "DeerFlow"** (25 en + 24 zh, `8f25c2cf`/`448ec920`) — notification, channels, memory, IM-bot blurbs, Lark-OAuth flow, skill install, shortcuts, agent save/load, SSO notice, remember-me, notification `testTitle`. Plus the disclaimer → `AI can make mistakes` (`be0139fa`) |
+| **`core/i18n/locales/en-US.ts` + `zh-CN.ts`** | **57 UI strings say "WRI AI", not "DeerFlow"** (29 en + 28 zh; `8f25c2cf`/`448ec920` + 2026-08-24 sync added 4/locale: MCP-task retry strings `#4833`/`#4963`, scheduler queue text `#4918`) — notification, channels, memory, IM-bot blurbs, Lark-OAuth flow, skill install, shortcuts, agent save/load, SSO notice, remember-me, notification `testTitle`. Plus the disclaimer → `AI can make mistakes` (`be0139fa`) |
 | `workspace/workspace-nav-menu.tsx` | nav **de-branding** — deerflow.tech / GitHub / issues / mailto links + the About item + Bug/Globe/Info/Mail/Github icons removed |
 | `workspace/workspace-header.tsx`, `workspace-container.tsx`, `settings/settings-dialog.tsx` | WRI chrome |
 | `settings/about-content.ts`, `about.md` | WRI About page — **deliberately credits** "WRI AI runs on the open-source DeerFlow framework from ByteDance" (correct attribution for MIT-licensed upstream work — do NOT strip) |
@@ -1873,3 +1876,13 @@ sg docker -c 'docker logs --since 5m deer-flow-gateway 2>&1 \
 - **#4898** moved `_MCP_TMP_SUBDIR` → `constants.MCP_TMP_SUBDIR` and excludes `.mcp/tmp` internals from workspace-change scans — the `session_env.setdefault("TMPDIR", …)` semantics our playwright `TMPDIR=/tmp` operator-env override rides on are UNCHANGED (verified in blob + PW_STRONG PASS live).
 - **3a/3b:** healthy, 200/401/200; sentinel in sync; head `0012_mcp_task_results` (no migrations); consolidation False / eviction confidence / retrieval '' / sandbox 1.11.0 / plugins [] / authz False / heartbeat False — all by instantiation.
 - **3c:** PW_STRONG PASS (run FIRST — #4898 touched the pinning path), chat×3, thread-id 64/65, UAE e2e, sandbox, present_files, subagent all PASS; re-skin 3+3, 0 deerflow.tech.
+
+### 2026-08-24 sync — `main`@`cc6a2657` (31 commits), merge `237471b8`
+- **Merge:** two conflicts, both on the re-skin surface: (1) `whats-new-section.tsx` modify/delete (#4970 casing vs our deleted landing) → kept DELETED; (2) `en-US.ts` disclaimer (#4970) → kept ours (`AI can make mistakes`). **4 NEW branded strings per locale rebranded to "WRI AI"** (MCP-task retry `#4833`/`#4963`, scheduler queue text `#4918`) → tallies back to 3+3; re-skin table now 29 en + 28 zh.
+- **#4852 lands the `extensions_config.json` RW mount** (Gateway API writes it for MCP/skill toggles; EBUSY in-place fallback). Our instance file's md5 UNCHANGED through build+boot — but this is a NEW rewrite vector for the LOAD-BEARING playwright `env` block: **re-verify it after ANY MCP/skill toggle via UI/API** (repo-layout note updated). `config.yaml` stays RO.
+- **#4911 authz Phase 3** (sandbox:execute at acquisition): `authorization.enabled: false` is a stated no-op — **verified False by instantiation**, sandbox tools smoke normally.
+- **Schema:** three migrations applied automatically at boot — head `0012_mcp_task_results` → **`0015_scheduled_task_enqueue`** (0013 mcp_task_notifications, 0014 managed_subagents). Sentinel: in sync.
+- **3b (all by instantiation via `get_app_config` + `DeerMem.from_config`):** consolidation False / eviction `confidence` / authorization False / heartbeat False / retrieval_adapter '' / plugins [] / sandbox image `all-in-one-sandbox:1.11.0` (⚠ pin lives in `cfg.sandbox.image`, no `version` attr) / alembic head 0015 via asyncpg. Zero boot errors.
+- **3c:** **PW_STRONG PASS run FIRST** (#4852 touched extensions handling; real spawn with the extensions env → WRI login title, `frontend:3000` reachable in-network); chat×3 kimi-k3/qwen3.7-plus/deepseek-v4-pro OK; thread-id 64 OK / 65 rejected (#4589 contract intact — NOTE: DOTS are invalid in thread ids, `1-64 [A-Za-z0-9_-]`); sandbox bash OK (`smoke-42`) + present_files OK; subagent OK; re-skin login 200 + WRI / 0 deerflow.tech / api 401; gateway log clean.
+- 📌 **Smoke lesson:** a minimal 1-turn chat now needs `recursion_limit` ≳100 (GraphRecursionError at 15–20 under the current middleware stack; pipeline's 500 unaffected). Use ≥100 in future smoke params.
+- **Watch:** #4918 scheduler now ENQUEUES busy scheduled runs (was skip) — if the outreach reconcile ever runs long, queued occurrences fire back-to-back; check its log once after real usage. #4659 model-visible tool receipts — behavior watched via chat/tool smokes, nothing anomalous.
