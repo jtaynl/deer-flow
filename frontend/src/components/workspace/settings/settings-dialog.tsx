@@ -7,6 +7,7 @@ import {
   PaletteIcon,
   PlugZapIcon,
   SparklesIcon,
+  UsersRoundIcon,
   UserIcon,
   WrenchIcon,
 } from "lucide-react";
@@ -83,6 +84,13 @@ const ToolSettingsPage = dynamic(
     import("./tool-settings-page").then((module) => module.ToolSettingsPage),
   { loading: SettingsPageLoading },
 );
+const SubagentSettingsPage = dynamic(
+  () =>
+    import("./subagent-settings-page").then(
+      (module) => module.SubagentSettingsPage,
+    ),
+  { loading: SettingsPageLoading },
+);
 const AboutSettingsPage = dynamic(
   () =>
     import("./about-settings-page").then((module) => module.AboutSettingsPage),
@@ -96,6 +104,7 @@ export type SettingsSection =
   | "integrations"
   | "memory"
   | "tools"
+  | "subagents"
   | "skills"
   | "notification"
   | "about";
@@ -151,6 +160,11 @@ export function SettingsDialog(props: SettingsDialogProps) {
         icon: BrainIcon,
       },
       { id: "tools", label: t.settings.sections.tools, icon: WrenchIcon },
+      {
+        id: "subagents",
+        label: t.settings.sections.subagents,
+        icon: UsersRoundIcon,
+      },
       { id: "skills", label: t.settings.sections.skills, icon: SparklesIcon },
     ],
     [
@@ -160,6 +174,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
       t.settings.sections.integrations,
       t.settings.sections.memory,
       t.settings.sections.tools,
+      t.settings.sections.subagents,
       t.settings.sections.skills,
       t.settings.sections.notification,
     ],
@@ -210,6 +225,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
               {activeSection === "appearance" && <AppearanceSettingsPage />}
               {activeSection === "memory" && <MemorySettingsPage />}
               {activeSection === "tools" && <ToolSettingsPage />}
+              {activeSection === "subagents" && <SubagentSettingsPage />}
               {activeSection === "skills" && (
                 <SkillSettingsPage
                   onClose={() => props.onOpenChange?.(false)}
