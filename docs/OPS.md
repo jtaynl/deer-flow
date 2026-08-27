@@ -1193,6 +1193,7 @@ Both categories still conflict, so treat this list as the checklist after every 
 | `scripts/deploy.sh` | our deploy wrapper | instance-specific |
 | `backend/scripts/schema_sync.py` | schema-drift **read-only sentinel** (`5e75178e`) | alembic OWNS DDL; this only *reports* drift |
 | `backend/packages/harness/deerflow/agents/lead_agent/prompt.py` | a `<language>` block — always answer in the user's language, default English | our users are English-first |
+| `backend/packages/harness/deerflow/community/aio_sandbox/local_backend.py` | **`--cap-add=FOWNER`** added to the image-startup capability set (`47fbb879`, 2026-08-28) | upstream `#4986` hardening keeps only CHOWN/SETUID/SETGID/DAC_OVERRIDE, but the shipped `all-in-one-sandbox:1.11.0` entrypoint also chmods `/run/user/1000` → exits 1 without FOWNER (reproduced with `docker run`; FOWNER alone fixes it). No env hatch ADDS caps upstream. Candidate upstream PR; drop the carry when upstream adds FOWNER or an add-caps env. |
 
 ⚠ `.env` also carries `UV_EXTRAS=postgres` (gitignored, so it is NOT in the diff above — restore it by hand
 if the file is ever recreated). `config.yaml` is likewise gitignored/instance-only (models incl. `kimi-k3`).
