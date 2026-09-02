@@ -1897,6 +1897,12 @@ sg docker -c 'docker logs --since 5m deer-flow-gateway 2>&1 \
 - **3a/3b:** clean boot, :2026 → 200, extensions_config.json md5 UNCHANGED (RW-mount watch), sentinel in sync, all invariants by instantiation (consolidation F / eviction confidence / authz F / heartbeat F / retrieval '' / plugins [] / subagent_batches F / head 0016).
 - **3c:** PW_STRONG PASS (first); chat×3 kimi/qwen/deepseek OK; sandbox bash `smoke-42` + present_files OK; subagent OK; thread-id 64 OK / 65 rejected; re-skin login 200 + WRI / 0 deerflow.tech / api 401; gateway log clean. (Smoke params per 08-24 lesson: recursion_limit 100, dot-free thread ids.)
 
+### 2026-09-02 sync #2 — `main`@`47f43f79` (7 commits), merge `ca1876c6`
+- Same-day second sync (upstream active): **#5134 sandbox-lease subsystem** (34 files, ~3.9k lines — concurrent subagent shell-session isolation), #5145 SSH_AUTH_SOCK scrub, #5110 configurable login rate limits, #5111/#4995/#5120/#5143 minor. Carried files untouched; clean merge; locales 3+3; no migrations (head `0017`); no dep changes (rebuild only because backend source changed).
+- **3a/3b:** clean boot, :2026 → 200, log clean, extensions md5 unchanged, sentinel in sync, invariants ALL OK.
+- **3c:** chat×3 OK (kimi-k3 / qwen3.7-plus / deepseek-v4-pro); **sandbox-real PASS through the NEW lease subsystem** (container `23ead064186a`); **subagent OK — the concurrent-shell-isolation path #5134 rewrote**; present_files OK; thread-id 64/65 intact; PW_STRONG PASS; re-skin 17 WRI / 0 deerflow.tech. Notably: the #4977 pydantic stderr noise did NOT recur this run.
+- Post-sync app test: Daily Watch brief vs the rebuilt gateway — result appended below when complete.
+
 ### 2026-09-02 sync — `main`@`30788c79` (36 commits), merge `74761cd4`
 - **Merge:** clean despite #5077 rewriting the mount handling in `local_backend.py` — the FOWNER carry's caps block untouched and auto-merged (upstream STILL lacks FOWNER: caps remain CHOWN/SETUID/SETGID/DAC_OVERRIDE — carry stays). Locales 3+3 (0 new branded strings); no migrations (head `0017`); rebuild required (`pyproject`/`uv.lock`).
 - **3a/3b:** clean boot, :2026 → 200, log clean, `extensions_config.json` md5 `efba0945…` unchanged, sentinel in sync, all invariants OK by instantiation.
