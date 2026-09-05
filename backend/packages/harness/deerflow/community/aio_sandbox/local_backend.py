@@ -1643,14 +1643,6 @@ class LocalContainerBackend(SandboxBackend):
                         "--cap-add=SETUID",
                         "--cap-add=SETGID",
                         "--cap-add=DAC_OVERRIDE",
-                        # local-fixes carry (2026-08-28): the shipped
-                        # all-in-one-sandbox:1.11.0 entrypoint also chmods
-                        # /run/user/1000 after chowning it to gem, which needs
-                        # CAP_FOWNER — without it the container exits 1 with
-                        # "chmod: changing permissions of '/run/user/1000':
-                        # Operation not permitted" before readiness (reproduced
-                        # with `docker run` directly; adding FOWNER alone boots).
-                        "--cap-add=FOWNER",
                         "--security-opt",
                         "no-new-privileges",
                     ]
