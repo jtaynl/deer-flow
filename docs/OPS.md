@@ -1195,7 +1195,6 @@ Both categories still conflict, so treat this list as the checklist after every 
 | `scripts/deploy.sh` | our deploy wrapper | instance-specific |
 | `backend/scripts/schema_sync.py` | schema-drift **read-only sentinel** (`5e75178e`) | alembic OWNS DDL; this only *reports* drift |
 | `backend/packages/harness/deerflow/agents/lead_agent/prompt.py` | a `<language>` block — always answer in the user's language, default English | our users are English-first |
-| `backend/packages/harness/deerflow/community/aio_sandbox/local_backend.py` | **`--cap-add=FOWNER`** added to the image-startup capability set (`47fbb879`, 2026-08-28) | upstream `#4986` hardening keeps only CHOWN/SETUID/SETGID/DAC_OVERRIDE, but the shipped `all-in-one-sandbox:1.11.0` entrypoint also chmods `/run/user/1000` → exits 1 without FOWNER (reproduced with `docker run`; FOWNER alone fixes it). No env hatch ADDS caps upstream. Candidate upstream PR; drop the carry when upstream adds FOWNER or an add-caps env. |
 
 ⚠ `.env` also carries `UV_EXTRAS=postgres` (gitignored, so it is NOT in the diff above — restore it by hand
 if the file is ever recreated). `config.yaml` is likewise gitignored/instance-only (models incl. `kimi-k3`).
@@ -1220,6 +1219,10 @@ factually reference `bytedance/deer-flow`, and their nav entries are already rem
 `/login` + `/setup` must return 200 with WRI branding and zero `deerflow.tech` references.
 
 ### Absorbed upstream (no longer carried)
+- `--cap-add=FOWNER` in `community/aio_sandbox/local_backend.py` (`47fbb879`, 2026-08-28) — absorbed
+  **2026-09-05**: upstream `#5163` (`83cb6767`) adds CAP_FOWNER to the default startup allowlist with a
+  regression test + CI smoke against the exact 1.11.0 image. The clean merge briefly left a DUPLICATE
+  `--cap-add=FOWNER` (ours + theirs) — removed in the follow-up commit; **the carried-patch table is now EMPTY.**
 - `fix(task_tool): handle AsyncCallbackManager in _find_usage_recorder` — absorbed 2026-05-21 (merge into
   `e93f6584` introduced an equivalent `isinstance(BaseCallbackManager)` check).
 - `fix(uploads): chmod uploaded files to 0644 so sandbox user can read` — absorbed 2026-05-25 (upstream
@@ -1896,6 +1899,36 @@ sg docker -c 'docker logs --since 5m deer-flow-gateway 2>&1 \
 - **Security:** #4987 restores sanitization in custom streamdown rehype chains (frontend render path) — taken.
 - **3a/3b:** clean boot, :2026 → 200, extensions_config.json md5 UNCHANGED (RW-mount watch), sentinel in sync, all invariants by instantiation (consolidation F / eviction confidence / authz F / heartbeat F / retrieval '' / plugins [] / subagent_batches F / head 0016).
 - **3c:** PW_STRONG PASS (first); chat×3 kimi/qwen/deepseek OK; sandbox bash `smoke-42` + present_files OK; subagent OK; thread-id 64 OK / 65 rejected; re-skin login 200 + WRI / 0 deerflow.tech / api 401; gateway log clean. (Smoke params per 08-24 lesson: recursion_limit 100, dot-free thread ids.)
+
+### 2026-09-05 sync — `main`@`3c36217a` (23 commits), merge `aa14d194` + carry-drop commit
+- **HEADLINE: the FOWNER carry is RETIRED — upstream #5163 adds CAP_FOWNER officially** (default startup caps
+  now CHOWN/FOWNER/SETUID/SETGID/DAC_OVERRIDE — exactly what we ran; regression-tested upstream against
+  1.11.0). Merge was CLEAN, which silently left a duplicate `--cap-add=FOWNER` (ours + theirs) — removed in the
+  follow-up commit. ⚠ LESSON: when upstream adopts a carry, a clean merge means DUPLICATION, not replacement —
+  grep the merged blob for the carried line. **Carried-patch table now EMPTY** (config/env/edge remain instance-only).
+- **Schema:** head `0017` → **`0018_oauth_identity_pg_partial`** (auto-applied at boot, branch=versioned, clean).
+  Config example v39 → **v40**: additive only — documented sandbox `network:` block (default `open`) +
+  `DEER_FLOW_DATE_TIMEZONE` runtime env (not a schema field); instance `config.yaml` unchanged.
+- **#5152 sandbox egress: default `open` VERIFIED a no-op by instantiation** (`cfg.sandbox.network.mode ==
+  "open"`, approval `prompt` inert in open mode) AND at container level (docker events show
+  `deerflow.network_mode=open` on live sandbox containers). Restricted modes need Docker 28+ — do not enable
+  without checking engine version.
+- **3a/3b:** clean boot, :2026 → 200, no redis/provisioner; sentinel "schema in sync" (⚠ sentinel invocation
+  now needs `-w /app/backend -e PYTHONPATH=/app/backend`, container python is `/app/backend/.venv/bin/python`);
+  extensions_config.json md5 `efba0945…` UNCHANGED; invariants ALL by instantiation: authz F / heartbeat F /
+  retrieval '' / plugins [] / subagent_batches F / consolidation F / eviction confidence / image :1.11.0 /
+  network open / head 0018.
+- **3c:** **PW_STRONG PASS run FIRST** (#5062 cross-loop MCP-cache lock + #5164 ToolRuntime injection touched
+  the stdio-MCP path; real spawn with operator env → WRI title); chat×3 kimi-k3 9.6s / qwen3.7-plus 2.1s /
+  deepseek-v4-pro 2.6s OK; thread-id 65 rejected; **sandbox-real PASS with the unguessable hostname assertion
+  through the now-official FOWNER caps** (`2a2c9b50b986` = `deer-flow-sandbox-24af1db05d5f0821` in docker
+  events, ≠ gateway `f23b9382da87`; die exitCode=137 on release = normal teardown); present_files DONE;
+  subagent SUB=1337 (subagent_enabled=True path); re-skin 17 WRI / 0 deerflow.tech / api 401; edge Caddy
+  Authorization-delete verified via admin API; log sweep 30m: zero 5xx/tracebacks (#4977 pydantic noise did
+  not appear). Locales untouched by the merge (keepers 3).
+- Bonus upstream in range: /health/ready DB-backed probe (#5166), summarization fraction-trigger crash fix
+  (#4901), buffered memory-extraction cancel on delete (#5123), waiter-safe keyed locks (#5176), deferred
+  tool-promotion persistence (#5183 — new audit middleware, no migration).
 
 ### 2026-09-02 sync #2 — `main`@`47f43f79` (7 commits), merge `ca1876c6`
 - Same-day second sync (upstream active): **#5134 sandbox-lease subsystem** (34 files, ~3.9k lines — concurrent subagent shell-session isolation), #5145 SSH_AUTH_SOCK scrub, #5110 configurable login rate limits, #5111/#4995/#5120/#5143 minor. Carried files untouched; clean merge; locales 3+3; no migrations (head `0017`); no dep changes (rebuild only because backend source changed).
