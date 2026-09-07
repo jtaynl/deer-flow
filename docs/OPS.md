@@ -1900,6 +1900,27 @@ sg docker -c 'docker logs --since 5m deer-flow-gateway 2>&1 \
 - **3a/3b:** clean boot, :2026 → 200, extensions_config.json md5 UNCHANGED (RW-mount watch), sentinel in sync, all invariants by instantiation (consolidation F / eviction confidence / authz F / heartbeat F / retrieval '' / plugins [] / subagent_batches F / head 0016).
 - **3c:** PW_STRONG PASS (first); chat×3 kimi/qwen/deepseek OK; sandbox bash `smoke-42` + present_files OK; subagent OK; thread-id 64 OK / 65 rejected; re-skin login 200 + WRI / 0 deerflow.tech / api 401; gateway log clean. (Smoke params per 08-24 lesson: recursion_limit 100, dot-free thread ids.)
 
+### 2026-09-07 sync — `main`@`cbd6621d` (23 commits), merge `92525686`
+- **Merge CLEAN, zero conflicts — first sync with an EMPTY carried-patch table.** No migrations (head stays
+  `0018`), no config-example change, no dep changes; locales +44 lines archive/restore strings, ZERO branded
+  copy (keepers 3). Includes the previously-skipped MindIE fix (#5195, inert).
+- **Range highlights for us:** #5206 scopes the EMBEDDED client's agent-graph cache by effective user in every
+  auth mode (our hottest path — LGI/outreach/watch); #4726 memory read-failure policy (OpenViking-centric,
+  fail-closed on unknown policy; our injection off); loop hard-stop, journal-dedup, cancellation fixes;
+  opt-in features dormant without config (chat archive/restore, per-channel custom agents, read-only LightRAG,
+  Parallel Search MCP). #5185 "Playwright" = frontend's own test config, NOT our extensions path.
+- **3a/3b:** clean boot, 0 errors; sentinel in sync; extensions md5 `efba0945…` unchanged; all invariants by
+  instantiation (authz F / heartbeat F / retrieval '' / plugins [] / subagent_batches F / consolidation F /
+  eviction confidence / image :1.11.0 / network open / head 0018).
+- **3c:** PW_STRONG PASS first; chat×3 kimi-k3 8.3s / qwen3.7-plus 2.9s / deepseek-v4-pro 1.8s; thread-id 65
+  rejected; sandbox hostname assertion closed via docker events (`ac62ec1456da` ≠ gateway `d4504f69dc36`);
+  present_files; subagent SUB=1337; re-skin 17/0; api 401; edge Authorization-delete intact; log sweep 0.
+- **App test (#5206 gate) — failed once, then PASSED; not a regression:** first post-sync watch-brief run
+  produced invalid JSON on attempt 1 (same truncation signature as the PRE-sync 04:35 failure that day) and
+  its retry ERRORED with the message swallowed (the retry ladder was same-day fresh code). Diagnostics added
+  (retry errors now land in raw2 + meta), reproduction run PASSED attempt-1 (180s, 5 items) through the new
+  client path. WATCH: if a retry fails again, raw2.txt now carries the actual error.
+
 ### 2026-09-05 sync — `main`@`3c36217a` (23 commits), merge `aa14d194` + carry-drop commit
 - **HEADLINE: the FOWNER carry is RETIRED — upstream #5163 adds CAP_FOWNER officially** (default startup caps
   now CHOWN/FOWNER/SETUID/SETGID/DAC_OVERRIDE — exactly what we ran; regression-tested upstream against
