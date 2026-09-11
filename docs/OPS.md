@@ -1900,6 +1900,48 @@ sg docker -c 'docker logs --since 5m deer-flow-gateway 2>&1 \
 - **3a/3b:** clean boot, :2026 → 200, extensions_config.json md5 UNCHANGED (RW-mount watch), sentinel in sync, all invariants by instantiation (consolidation F / eviction confidence / authz F / heartbeat F / retrieval '' / plugins [] / subagent_batches F / head 0016).
 - **3c:** PW_STRONG PASS (first); chat×3 kimi/qwen/deepseek OK; sandbox bash `smoke-42` + present_files OK; subagent OK; thread-id 64 OK / 65 rejected; re-skin login 200 + WRI / 0 deerflow.tech / api 401; gateway log clean. (Smoke params per 08-24 lesson: recursion_limit 100, dot-free thread ids.)
 
+### 2026-09-11 sync — `main`@`3f0b6ecc` (45 commits), merge `bd7340e9`
+- **Merge:** 2 conflicts, both re-skin surface. `landing/header.tsx` keep-OURS (upstream extracted its
+  StarCounter into `star-counter.tsx`; our WRI header has no star button — the new file + its test ride
+  along orphaned-but-passing, like `showcase/`). `workspace-container.tsx` keep-OURS imports (GithubIcon/
+  Tooltip stay de-branded) + GRAFT upstream's `LINKABLE_SECTIONS` breadcrumb guard (the condition change
+  itself auto-merged). Locales auto-merged, keepers 3+3, ZERO new branded copy. prompt.py `<language>`
+  block, redis-strip (compose+deploy.sh), Dockerfile playwright/readabilipy patches, builder-prune cap —
+  all intact. Carried-patch table stays EMPTY.
+- **Schema: FOUR migrations, deceptively numbered but LINEAR** — `0018 → 0019_projects →
+  0020_threads_meta_project_id → 0021_batch_acceptance → 0019_thread_incarnations` (#5216 lands LAST
+  despite the "0019" name). All auto-applied at boot in chain order; **3b head expectation is now
+  `0019_thread_incarnations`** — assert the string, not "0021". Config example v40 → **v41** (additive:
+  `use_previous_response_id` doc note, Sofya web_search example); instance config untouched.
+- **Range highlights:** #5265 project workspaces (bulk of the diff + 2 migrations, UI-opt-in, inert for
+  embedded); #5338 gates `github_token`/`disable_clarification` to internal callers — GATEWAY-BODY
+  contract only; the embedded `DeerFlowClient.chat()` kwargs (message/thread_id/model_name/thinking/
+  subagent/recursion_limit) are untouched, confirmed by smokes on real LGI-shaped inputs; #4962 MCP
+  session-pool capacity (PW_STRONG run FIRST — PASS); #5249 `summary_text` in embedded values events
+  (additive; watch-brief unaffected); #5344 loop-detection state by run; #5288/#5291 scheduler additions
+  (scheduler off); #5321 artifact PUT confinement; #5329 blocked-write payload elision; fa89a125 sandbox
+  virtual-path masking; d8ed8160 list_dir failure reporting.
+- **3a/3b:** clean boot, `branch=versioned 0018 -> upgrade head (0019_thread_incarnations)`, all 4
+  migrations in order, 0 errors; :2026 → 200; no redis/provisioner; sentinel "schema in sync";
+  extensions md5 `efba0945…` unchanged; invariants ALL by instantiation (authz F / plugins [] /
+  scheduler F / subagent_batches F / mcp_tasks F / consolidation F (`consolidation_enabled` on
+  DeerMemConfig — flat field, not a sub-object) / eviction confidence / image :1.11.0 / network open /
+  head 0019_thread_incarnations / 7 models). ⚠ probe API note: `DeerMem` now imports from
+  `deerflow.agents.memory.backends.deermem.deer_mem` (NOT re-exported at package root);
+  `from_config(dict(cfg.memory.backend_config))`.
+- **3c:** PW_STRONG PASS first (real MCP spawn, operator env, WRI title); chat×3 qwen3.7-plus 5.1s /
+  kimi-k3 4.2s / deepseek-v4-pro 4.7s, first chat on a 64-char LGI-style thread id; 65-char + dotted
+  ids rejected (ValueError — external-caller contract unchanged); sandbox unguessable-hostname CLOSED
+  via docker events (`ab6ae07a6f80` = `deer-flow-sandbox-8d05464b79c2a41c`, :1.11.0,
+  network_mode=open, ≠ gateway `2ba18856dbf0`); present_files artifact verified on disk with exact
+  content; subagent SUB=1337; re-skin 47 WRI / 0 DeerFlow, login+setup 200 / 0 deerflow.tech;
+  /api/models + /auth/me 401, /docs + /openapi.json 404, showcase 404; public edge 401; Caddy
+  Authorization-strip present; log sweep 20m ZERO errors.
+- **WATCH:** during the present_files smoke the sandbox file-READ error path emitted a pydantic
+  validation error (`ResponseFileReadResult` missing `content`/`data.file` on a FileNotFoundError
+  payload) on the embedded run's stderr — end state was correct and the agent recovered, but if file
+  reads start failing loudly post-#5278/#5264, this response-shape mismatch is the first suspect.
+
 ### 2026-09-07 sync — `main`@`cbd6621d` (23 commits), merge `92525686`
 - **Merge CLEAN, zero conflicts — first sync with an EMPTY carried-patch table.** No migrations (head stays
   `0018`), no config-example change, no dep changes; locales +44 lines archive/restore strings, ZERO branded
