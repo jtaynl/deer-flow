@@ -1980,3 +1980,13 @@ sg docker -c 'docker logs --since 5m deer-flow-gateway 2>&1 \
 - **3a/3b:** clean boot, :2026 → 200, extensions_config.json md5 unchanged, sentinel in sync, all invariants by instantiation (incl. subagent_batches False, head 0016), gateway log clean.
 - **3c:** PW_STRONG PASS; chat×3 OK; **sandbox-real PASS (ran in container 36efc706fcf3, gateway d479b263cc3c) + present_files OK**; subagent OK; thread-id 64/65 contract intact; re-skin login 200 + WRI / 0 deerflow.tech / api 401.
 - Other range items inert as predicted: #5018 stdio reconnect (PW_STRONG covers), #5030 authz on stateless endpoints (authz False verified), #5010/#4955/#5057 config surfaces off, #5063 CI-only.
+
+## 2026-09-11 — BuildKit cache cap in deploy.sh (housekeeping)
+
+The host's disk hit 82% (378GB): `docker system df` showed **347.7GB of BuildKit build cache** (783
+entries) accumulated across sync/rebuild cycles since July. One-off `docker builder prune -af` reclaimed
+the full 347.7GB (disk → 12%); stack verified healthy after (all containers up, gateway healthy, :2026 →
+200 — build cache pruning never touches running containers or tagged images; the sandbox pin is safe).
+**Permanent guard:** `deploy.sh` now runs `docker builder prune --force --keep-storage 20GB` after BOTH
+build paths (build-only and default build+start), so cache is capped at ~one stack build's worth. If a
+rebuild ever feels slow after a long gap, that is this cap working as intended.

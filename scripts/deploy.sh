@@ -330,6 +330,11 @@ if [ "$CMD" = "build" ]; then
 
     "${COMPOSE_CMD[@]}" build
 
+    # Cap the BuildKit layer cache after every build: repeated sync/deploy cycles accumulated
+    # 347GB of build cache on this host (pruned 2026-09-11) before this guard existed. 20GB keeps
+    # roughly one full stack build's worth of cache for fast rebuilds; everything older goes.
+    docker builder prune --force --keep-storage 20GB > /dev/null 2>&1 || true
+
     echo ""
     echo "=========================================="
     echo "  ✓ Images built successfully"
@@ -414,6 +419,8 @@ else
         report_startup_failure
         exit 1
     fi
+    # Cap the BuildKit layer cache after the build (same guard as the build-only path; see comment there).
+    docker builder prune --force --keep-storage 20GB > /dev/null 2>&1 || true
 fi
 
 echo ""
