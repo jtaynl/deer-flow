@@ -16,6 +16,14 @@ import { SidebarTrigger } from "@/components/ui/sidebar";
 import { useI18n } from "@/core/i18n/hooks";
 import { cn } from "@/lib/utils";
 
+// Workspace sections that have an index route (/workspace/<section>/page.tsx)
+// and can therefore be linked to from the breadcrumb.
+const LINKABLE_SECTIONS: Record<string, true> = {
+  agents: true,
+  chats: true,
+  "scheduled-tasks": true,
+};
+
 export function WorkspaceContainer({
   className,
   children,
@@ -66,7 +74,7 @@ export function WorkspaceHeader({
               <>
                 <BreadcrumbSeparator className="hidden md:block" />
                 <BreadcrumbItem>
-                  {segments.length >= 2 ? (
+                  {segments[1] && LINKABLE_SECTIONS[segments[1]] ? (
                     <BreadcrumbLink asChild>
                       <Link href={`/${segments[0]}/${segments[1]}`}>
                         {nameOfSegment(segments[1], t)}
