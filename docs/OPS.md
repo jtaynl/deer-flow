@@ -1900,6 +1900,40 @@ sg docker -c 'docker logs --since 5m deer-flow-gateway 2>&1 \
 - **3a/3b:** clean boot, :2026 → 200, extensions_config.json md5 UNCHANGED (RW-mount watch), sentinel in sync, all invariants by instantiation (consolidation F / eviction confidence / authz F / heartbeat F / retrieval '' / plugins [] / subagent_batches F / head 0016).
 - **3c:** PW_STRONG PASS (first); chat×3 kimi/qwen/deepseek OK; sandbox bash `smoke-42` + present_files OK; subagent OK; thread-id 64 OK / 65 rejected; re-skin login 200 + WRI / 0 deerflow.tech / api 401; gateway log clean. (Smoke params per 08-24 lesson: recursion_limit 100, dot-free thread ids.)
 
+### 2026-09-12 sync — `main`@`e20b36b3`-range tip (30 commits), merge `c6191a6d`
+- **Merge CLEAN, zero conflicts.** Two carried files auto-merged and verified in the blob: `deploy.sh`
+  (upstream added a Windows Git Bash DooD socket guard #5371 — inert on Linux; our redis-strip 0 refs +
+  2 builder-prune lines intact) and `lead_agent/prompt.py` (#5367 subagent context guidance; our
+  `<language>` block intact). Locales clean (keepers 3+3, zero new branded strings). Next 16.2.11→16.3.3
+  (Dependabot) — re-skin built clean. Carried-patch table stays EMPTY.
+- **Schema:** head `0019_thread_incarnations` → **`0022_scheduled_occurrence_seq`** (single additive step,
+  chains directly from 0019_thread_incarnations — numbering sane again; applied at boot, branch=versioned).
+  Config example v41 → **v42**: new `task_continuity` section (#5382 task notes + compacted-history recall)
+  — **verified `enabled: False` by instantiation** (silent-default satisfied).
+- **Range highlights:** event-loop refactor cluster on the embedded hot path (#5217 agent construction
+  off-loop, #5224 tool assembly off-loop, #5335 starvation regressions) — exercised by chat×3 + sandbox +
+  subagent smokes, all green; #5357 skill-toggle secret persistence (extensions_config write path —
+  md5 `efba0945…` UNCHANGED); #5380 remote grep/glob failure reporting (remote providers only — e2b/
+  boxlite/opensandbox/tenki, NOT our AIO path; ResponseFileReadResult untouched in range, WATCH stands);
+  #5347 extension in-place upgrade + `make extension-upgrade` (no third-party extensions here); #5353 XML
+  artifacts as attachments; authz Phase-4 UI gating (authz off); scheduled-tasks preview/history
+  (scheduler off).
+- **3a/3b:** clean boot, migration applied, 0 errors, :2026 → 200, no redis/provisioner; sentinel
+  "schema in sync"; invariants by instantiation (authz F / plugins [] / scheduler F / subagent_batches F /
+  mcp_tasks F / **task_continuity F (new)** / consolidation F / eviction confidence / image :1.11.0 /
+  network open / head 0022_scheduled_occurrence_seq / 7 models).
+- **3c:** PW_STRONG PASS first; chat×3 qwen 5.7s / kimi 4.7s / deepseek 2.2s (64-char LGI-style id OK);
+  65-char + dotted rejected; present_files artifact on disk exact (the latent ResponseFileReadResult
+  FileNotFoundError shape noise recurred — WATCH unchanged); subagent SUB=1337 (with a benign
+  "Repetitive tool calls detected" warning + a durable-context mention — #5344/#5367 surface, answer
+  correct); re-skin 47/0, login+setup 200/0, api 401, docs+openapi 404, public edge 401; log sweep 25m
+  ZERO. ⚠⚠ **SMOKE LESSON: qwen REFUSED the sandbox `hostname` probe** ("cannot reveal system
+  information", 1.8s, NO sandbox ran) while the battery still printed ok — the unguessable-value
+  assertion caught it (no matching container event). Retry with deepseek-v4-pro + routine-infra-check
+  framing PASSED and closed via docker events (`3e76c8cd07b8` = `deer-flow-sandbox-c50093ebcc081fa1`
+  ≠ gateway). **Never accept a sandbox smoke without the docker-events match; keep deepseek as the
+  sandbox-smoke fallback model.**
+
 ### 2026-09-11 sync — `main`@`3f0b6ecc` (45 commits), merge `bd7340e9`
 - **Merge:** 2 conflicts, both re-skin surface. `landing/header.tsx` keep-OURS (upstream extracted its
   StarCounter into `star-counter.tsx`; our WRI header has no star button — the new file + its test ride
