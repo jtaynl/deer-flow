@@ -30,14 +30,14 @@ from typing import Any, Literal
 
 from langchain.agents import create_agent
 from langchain.agents.middleware import AgentMiddleware
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 
 from deerflow.agents.lead_agent.agent import _authorize_model_name, build_middlewares
 from deerflow.agents.lead_agent.prompt import apply_prompt_template, get_enabled_skills_for_config
 from deerflow.agents.thread_state import get_thread_state_schema, normalize_middleware_state_schemas
 from deerflow.authz.principal import build_principal_from_context
-from deerflow.config.agents_config import AGENT_NAME_PATTERN
+from deerflow.config.agents_config import AGENT_NAME_PATTERN, load_agent_config
 from deerflow.config.app_config import get_app_config, reload_app_config
 from deerflow.config.extensions_config import (
     ExtensionsConfig,
@@ -242,6 +242,8 @@ class DeerFlowClient:
         # Lazy agent — created on first call, recreated when config changes.
         self._agent = None
         self._agent_config_key: tuple | None = None
+        self._loaded_agent_config_key: tuple[str, str] | None = None
+        self._loaded_agent_config = None
 
     def reset_agent(self) -> None:
         """Force the internal agent to be recreated on the next call.
@@ -252,6 +254,8 @@ class DeerFlowClient:
         """
         self._agent = None
         self._agent_config_key = None
+        self._loaded_agent_config_key = None
+        self._loaded_agent_config = None
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -301,6 +305,23 @@ class DeerFlowClient:
         # authorization principal so one trusted embedded client can safely
         # serve more than one caller.
         effective_user_id = cfg.get("user_id") or get_effective_user_id()
+        agent_config = None
+        if self._agent_name is not None:
+            loaded_config_key = (self._agent_name, effective_user_id)
+            if getattr(self, "_loaded_agent_config_key", None) == loaded_config_key:
+                agent_config = self._loaded_agent_config
+            else:
+                try:
+                    agent_config = load_agent_config(self._agent_name, user_id=effective_user_id)
+                except (FileNotFoundError, ValueError):
+                    logger.warning(
+                        "Unable to load config for named agent %s; using the memory-enabled compatibility default",
+                        self._agent_name,
+                        exc_info=True,
+                    )
+                self._loaded_agent_config_key = loaded_config_key
+                self._loaded_agent_config = agent_config
+        memory_enabled = getattr(agent_config, "memory_enabled", True) is not False
 
         authorization_identity = None
         if self._app_config.authorization.enabled:
@@ -325,6 +346,7 @@ class DeerFlowClient:
             cfg.get("max_concurrent_subagents"),
             cfg.get("max_total_subagents"),
             self._agent_name,
+            memory_enabled,
             frozenset(self._available_skills) if self._available_skills is not None else None,
             self._checkpoint_channel_mode,
             self._checkpoint_snapshot_frequency,
@@ -418,6 +440,7 @@ class DeerFlowClient:
                     model_name=model_name,
                     agent_name=self._agent_name,
                     available_skills=self._available_skills,
+                    memory_enabled=memory_enabled,
                     custom_middlewares=self._middlewares,
                     app_config=self._app_config,
                     deferred_setup=deferred_setup,
@@ -441,6 +464,7 @@ class DeerFlowClient:
                 user_id=effective_user_id,
                 skill_names=skill_setup.skill_names or None,
                 subagent_execution_capacity=subagent_execution_capacity,
+                memory_enabled=memory_enabled,
             ),
             "state_schema": get_thread_state_schema(self._checkpoint_channel_mode, self._checkpoint_snapshot_frequency),
         }
@@ -949,6 +973,10 @@ class DeerFlowClient:
         # Cross-mode handoff: ids already streamed via LangGraph ``messages``
         # mode so the ``values`` path skips re-synthesis of the same message.
         streamed_ids: set[str] = set()
+        # AI messages whose tool calls arrived as streamed fragments. The
+        # arguments only parse once the message is complete, so their
+        # tool_calls event is emitted from the values snapshot instead.
+        pending_tool_call_ids: set[str] = set()
         # The same message id carries identical cumulative ``usage_metadata``
         # in both the final ``messages`` chunk and the values snapshot —
         # count it only on whichever arrives first.
@@ -1041,7 +1069,12 @@ class DeerFlowClient:
                         )
                         sent_additional_kwargs = bool(additional_kwargs_delta)
 
-                    if msg_chunk.tool_calls:
+                    # A chunk without an id can't be matched to its values
+                    # snapshot, so it keeps the per-chunk event below.
+                    if isinstance(msg_chunk, AIMessageChunk) and msg_chunk.tool_call_chunks and msg_id:
+                        streamed_ids.add(msg_id)
+                        pending_tool_call_ids.add(msg_id)
+                    elif msg_chunk.tool_calls:
                         if msg_id:
                             streamed_ids.add(msg_id)
                         additional_kwargs_delta = None if sent_additional_kwargs else _unsent_additional_kwargs(msg_id, additional_kwargs)
@@ -1074,7 +1107,10 @@ class DeerFlowClient:
                         _account_usage(msg_id, getattr(msg, "usage_metadata", None))
                         additional_kwargs = self._serialize_additional_kwargs(msg)
                         additional_kwargs_delta = _unsent_additional_kwargs(msg_id, additional_kwargs)
-                        if additional_kwargs_delta:
+                        if msg_id in pending_tool_call_ids and msg.tool_calls:
+                            pending_tool_call_ids.discard(msg_id)
+                            yield self._ai_tool_calls_event(msg_id, msg.tool_calls, additional_kwargs_delta)
+                        elif additional_kwargs_delta:
                             # Metadata-only follow-up: ``messages-tuple`` has no
                             # dedicated attribution event, so clients should
                             # merge this empty-content AI event by message id
@@ -1304,8 +1340,7 @@ class DeerFlowClient:
             self._atomic_write_json(config_path, config_data)
             reloaded = reload_extensions_config()
 
-        self._agent = None
-        self._agent_config_key = None
+        self.reset_agent()
         return {"mcp_servers": {name: server.model_dump() for name, server in reloaded.mcp_servers.items()}}
 
     # ------------------------------------------------------------------
@@ -1406,8 +1441,7 @@ class DeerFlowClient:
 
             logging.getLogger(__name__).warning("Failed to invalidate skills prompt cache after update_skill: %s", exc)
 
-        self._agent = None
-        self._agent_config_key = None
+        self.reset_agent()
 
         updated = next((s for s in storage.load_skills(enabled_only=False) if s.name == name), None)
         if updated is None:

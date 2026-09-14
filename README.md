@@ -291,6 +291,13 @@ single-label cluster hosts, and Docker/Podman internal hostnames do not inherit
 honor environment proxy settings.
 
 Backend processes automatically pick up `config.yaml` changes on the next config access, so model metadata updates do not require a manual restart during development.
+
+Gateway runs use the top-level `recursion_limit` in `config.yaml` when an API
+request does not provide one. The default is `100`; valid per-request values
+take precedence, and `max_recursion_limit` (default `1000`) caps both. Changes
+apply to the next run without restarting the Gateway. This top-level setting
+applies to Gateway API runs; IM channel and embedded `DeerFlowClient` runs
+retain their own defaults and per-call override paths.
 The checkpoint storage settings `database.checkpoint_channel_mode` and
 `database.checkpoint_delta.snapshot_frequency` (default `10`) are exceptions:
 both are frozen when the process first builds an agent (including through
@@ -326,6 +333,10 @@ For persistent deployments, configure `database.backend` as `sqlite` or
 `postgres`. The selected backend is shared by the LangGraph checkpointer,
 LangGraph Store, and DeerFlow application data. The deprecated `checkpointer`
 section, when present, overrides the first two for backward compatibility.
+
+For lightweight single-process event persistence, `run_events.backend: jsonl`
+keeps Unicode message content intact, including line and paragraph separators.
+Existing valid JSONL records remain readable without rewriting the files.
 
 The unified nginx endpoint is same-origin by default and does not emit browser CORS headers. If you run a split-origin or port-forwarded browser client, set `GATEWAY_CORS_ORIGINS` to comma-separated exact origins such as `http://localhost:3000`; the Gateway then applies the CORS allowlist and matching CSRF origin checks.
 
@@ -517,6 +528,8 @@ DeerFlow supports configurable MCP servers and skills to extend its capabilities
 For HTTP/SSE MCP servers, OAuth token flows are supported (`client_credentials`, `refresh_token`).
 For stdio MCP servers, per-tool call timeouts can be configured with `tool_call_timeout`; durable background-task calls honor the same setting for HTTP/SSE servers as well.
 MCP tool names are prefixed with `<server_name>_` by default to prevent collisions across servers. If a server already namespaces its own tools, set `tool_name_prefix: false` on that server in `extensions_config.json` to keep the original names. Disable the prefix only when the resulting names remain unique across all enabled servers.
+Signed-in users' notification toggle, default model, conversation mode, and reasoning effort are saved to their account and restored on other browsers or after clearing browser storage. Browser notification permission still needs to be granted on each device. Changes retry after network failures; unsent changes survive a reload in the same tab. Concurrent edits to different fields are preserved; for the same field, the last server write wins. Existing unscoped browser preferences are not uploaded automatically because they have no account owner; reselect those settings once after upgrading. Static demos and auth-disabled development keep browser-local settings. Thread-specific model overrides and other display preferences remain local.
+
 Settings > Tools adds, replaces, and deletes one MCP server at a time through targeted mutations that preserve concurrent sibling changes; deletes use a bodyless URL-addressed request. An invalid stdio command on one server no longer blocks toggling another, while enabling that invalid server remains protected by the command allowlist and surfaces the backend validation message in the UI.
 Targeted updates accept both DeerFlow's `type` field and the MCP-spec `transport` field for SSE/HTTP servers.
 Runtime MCP and skill updates replace `extensions_config.json` atomically, so an interrupted write cannot leave the shared configuration truncated or partially written.
@@ -1009,7 +1022,7 @@ than a green status hiding a later `command not found`.
 
 If a trusted operator manages the configured skills directory through an external mount such as MinIO, NFS, or CSI, an administrator can call `POST /api/skills/reload` after changing files. This invalidates skill prompt caches for the current Gateway process and waits up to the bounded refresh timeout so subsequent runs rescan the latest files; running tasks are unchanged. A loader-level filesystem failure returns a generic server error and preserves the last successfully loaded process cache rather than publishing an empty catalog. Uvicorn workers and Kubernetes Pods must each be targeted separately. Direct mount writes bypass the validation, SkillScan, and history applied by DeerFlow's install/edit APIs, so only operator-controlled systems should have write access.
 
-Skill installs and agent-managed skill edits run through **SkillScan**, a native deterministic safety scanner before the LLM-based skill scanner. Phase 1 runs offline with no Semgrep/OpenGrep dependency, blocks high-confidence `CRITICAL` findings such as private keys or shell execution, and passes warning findings to the LLM scanner for contextual review. The moderation adapter normalizes both plain-text model responses and LangChain Responses API text blocks before parsing the required JSON decision. Python instance-client exfiltration checks follow a minimal same-scope evidence chain: a simple name bound to a known client constructor, optional name-to-name aliases, and an actual outbound method or context-manager use supported by that constructor. Constructor roots must be proven imports; bare canonical-looking names are not inferred as modules. Nested scopes do not inherit client handles and inherit only constructor import aliases that are never rebound in the enclosing scope. Comprehensions, walrus-bearing statements, annotations, complex binding targets, unsupported operations, and ambiguous branch flows produce no finding from this signal; skipped constructs conservatively invalidate every name they may bind so stale client state cannot create a finding. A deterministic work budget or recursion limit reached by this best-effort analysis does not discard findings already collected for the file. Set `skill_scan.enabled: false` in `config.yaml` to disable only the deterministic analyzers; safe archive extraction and the LLM scanner still run.
+Skill installs and agent-managed skill edits run through **SkillScan**, a native deterministic safety scanner before the LLM-based skill scanner. Phase 1 runs offline with no Semgrep/OpenGrep dependency, blocks high-confidence `CRITICAL` findings such as private keys or shell execution, and passes warning findings to the LLM scanner for contextual review. Code files (anything under `scripts/`, a script suffix such as `.py`, `.sh`, or `.js`, or an extensionless file starting with `#!`) that are not NUL-free UTF-8 text raise a warning and are still analyzed over a lossy decode, so a single stray byte cannot hide them from `CRITICAL` checks. The moderation adapter normalizes both plain-text model responses and LangChain Responses API text blocks before parsing the required JSON decision. Python instance-client exfiltration checks follow a minimal same-scope evidence chain: a simple name bound to a known client constructor, optional name-to-name aliases, and an actual outbound method or context-manager use supported by that constructor. Constructor roots must be proven imports; bare canonical-looking names are not inferred as modules. Nested scopes do not inherit client handles and inherit only constructor import aliases that are never rebound in the enclosing scope. Comprehensions, walrus-bearing statements, annotations, complex binding targets, unsupported operations, and ambiguous branch flows produce no finding from this signal; skipped constructs conservatively invalidate every name they may bind so stale client state cannot create a finding. A deterministic work budget or recursion limit reached by this best-effort analysis does not discard findings already collected for the file. Set `skill_scan.enabled: false` in `config.yaml` to disable only the deterministic analyzers; safe archive extraction and the LLM scanner still run.
 
 DeerFlow also ships with **skill-reviewer**, a public skill for read-only skill quality review. It uses the built-in `review_skill_package` tool to inspect installed skills, local packages, archives, or pasted `SKILL.md` content without activating the target skill, binding its secrets, executing its scripts, or installing it. The tool returns a compact, tag-neutralized JSON payload to the model context and keeps the full raw review payload in the tool artifact for programmatic consumers. The deterministic review core reuses DeerFlow parsing and SkillScan facts, emits versioned JSON contracts under `contracts/skill_review/`, and can be run from the backend CLI:
 
@@ -1187,6 +1200,14 @@ Web UI chat links percent-encode custom thread identifiers before placing them i
 └── lark-cli/lark-doc/SKILL.md      ← managed, read-only
 ```
 
+The built-in `image-generation` skill supports Gemini, MiniMax, and
+OpenAI-compatible Images APIs. Select the latter with
+`IMAGE_GENERATION_PROVIDER=openai`, then configure
+`IMAGE_GENERATION_API_KEY`, `IMAGE_GENERATION_BASE_URL`, and
+`IMAGE_GENERATION_MODEL`. For a containerized sandbox, expose these variables
+through `sandbox.environment`; sandbox commands intentionally do not inherit
+API keys from the Gateway process.
+
 #### Exporting Custom Skills
 
 Administrators can export their own custom skills from **Settings → Skills → Custom → Export**. Review the file list and declared environment requirements, then choose **Download .skill**. The archive contains the currently saved skill, including supporting files and empty directories; disabled skills can also be exported. If the skill changes after preview, refresh the file list before downloading. Import the archive on another DeerFlow instance with **Install .skill**; existing-name conflicts and normal installation security checks still apply.
@@ -1223,6 +1244,8 @@ DEERFLOW_LANGGRAPH_URL=http://localhost:2026/api/langgraph  # LangGraph API
 See [`skills/public/claude-to-deerflow/SKILL.md`](skills/public/claude-to-deerflow/SKILL.md) for the full API reference.
 
 ### Chat Archive
+
+Deleting a chat from the sidebar requires confirmation showing its title. Deletion removes the conversation and its files and cannot be undone.
 
 Use **Archive chat** in a recent chat's sidebar menu to hide completed work while keeping its messages, files, and original link. The success message offers **Undo**. Open **Chats → Archived** to find archived conversations and restore them individually; an open archived conversation also shows a restore button in its header. Search filters the titles of loaded conversations, with **Load more** for older entries.
 
@@ -1456,9 +1479,33 @@ request the binary capability retain the legacy JSON/base64 frame protocol.
 
 **Visible Tool-Run Completion**: For interactive turns, DeerFlow retries an empty post-tool final response once, then surfaces a visible error instead of reporting a silent successful run.
 
+### Reading a Referenced Conversation
+
+Gateway API callers can opt into `read_conversation` and submit a
+`conversation_references` list with a run. The lead agent can then read bounded
+pages of the current visible text of those owned conversations. Read permission
+expires with the run, and text in old messages does not grant access. Text the
+agent has already read stays in the destination conversation after access
+expires or the source is deleted. When a message is truncated, the agent is told
+to ask for the missing part before claiming it has covered every requirement.
+This API-only feature adds no frontend selector or automatic history search. See
+[configuration](backend/docs/CONFIGURATION.md#reading-referenced-conversations)
+and the [request contract](backend/docs/API.md#referencing-a-previous-conversation).
+
 ### Long-Term Memory
 
 Most agents forget everything the moment a conversation ends. DeerFlow remembers.
+
+DeerMem can optionally suppress near-duplicate extracted facts with
+`memory.backend_config.fact_dedup_enabled: true` and
+`fact_dedup_similarity_threshold` (default `0.7`, range `0.5`–`1.0`).
+This local, deterministic word/CJK-bigram heuristic compares facts only within
+the same user, agent, and category; it is not semantic equivalence detection.
+It keeps the existing ID, text, and creation time, raises confidence to the
+maximum, and refreshes the source only when confidence increases. Explicit
+correction replacements and facts proposed for removal are protected from
+near-duplicate merging. A merge does not count as user confirmation. The gate
+is off by default and does not affect targeted fact updates.
 
 DeerFlow also includes an optional `openviking` memory backend. It uses the
 official `langchain-openviking` package to capture completed turns into stable
@@ -1494,6 +1541,8 @@ When a fact scope reaches `max_facts`, DeerMem still uses the historical confide
 File-backed memory now separates global user context from agent facts. Each user has one `memory.json` containing only the project-independent `user` and `history` summaries; every fact is a canonical Markdown file below `agents/{agent_name}/facts/`. Existing lead-agent middleware, API, Settings, import/export, and embedded-client calls that omit `agent_name` resolve inside DeerMem to the reserved `__default__` bucket. That bucket is outside the valid custom-agent name grammar, so a real custom agent named `lead-agent` has a separate fact repository and deleting a custom agent cannot delete a memory-only directory without `config.yaml`. Public agent identifiers are case-insensitive and canonicalized to lowercase. Runtime/API readers still receive a compatibility `facts` array for the selected/default agent, so the frontend does not read agent facts from `memory.json`; structured Markdown `source` metadata is projected to the historical string field at the MemoryManager boundary. An unscoped Clear All first migrates facts from unread legacy per-agent JSON without adopting its soon-to-be-cleared summaries, then removes shared summaries and facts from every agent bucket while preserving agent configuration files, so a later read cannot resurrect skipped legacy facts; an explicitly agent-scoped clear removes only that agent's facts. On first normal read, old facts embedded in the user JSON are migrated automatically to `__default__`; facts written to the earlier implicit `lead-agent` bucket are also moved when that directory is not a real custom agent. Migration and normal writes notify the configured retrieval adapter only after durable storage locks are released. DeerMem uses a scope-aware SQLite FTS5/BM25 adapter by default, stores only rebuildable derived index data under `.retrieval/`, and rebuilds it in the background during Gateway startup or lazily on the first scoped search. A corrupt derived index is recreated automatically. Set `memory.backend_config.retrieval_adapter` to an empty string to disable it and use the local substring fallback. Chinese tokenization is optional; install the backend `memory-zh` extra (`uv sync --extra memory-zh`) for jieba-assisted sub-phrase search. Journaled writes, a shared user lock, and optimistic user-memory revisions prevent silent lost updates.
 
 Memory injection follows the configured operation mode. In `middleware` mode, DeerMem injects the user-global summaries and the selected agent's facts. Custom-agent bootstrap conversations use that agent's fact bucket as well, so setup details do not leak into the default agent's memory. In `tool` mode, the automatic `<memory>` block contains only the global `user` and `history` summaries; agent facts are retrieved explicitly through `memory_search`, avoiding duplicate automatic and tool-returned fact context. Setting `memory.injection_enabled: false` still disables the entire block in either mode.
+
+An individual Custom Agent can opt out of memory without changing the global setting. Add `memory_enabled: false` to that agent's `users/{user_id}/agents/{name}/config.yaml`. The agent still receives the current-date reminder, but DeerFlow does not inject recalled memory, queue passive or summarization-driven memory updates (including manual `/compact`), expose memory tools, or add memory-tool instructions for that agent. If an existing agent is switched off, its previously injected memory block is removed from checkpoint state before the next model call while its date reminder and conversation remain. Omitting the field (or setting it to `true`) preserves the existing global `memory` behavior.
 
 Single-fact repository operations are genuinely incremental: an upsert/delete reads, journals, writes, and re-indexes only the addressed fact files, and returns an explicit incomplete delta rather than a cache-dependent fake full document. Summary change sets merge the supplied `user`/`history` child keys over the persisted sections so a partial update cannot erase omitted siblings; full imports normalize both sections to the complete compatibility schema before applying replacement values. Manager/API compatibility methods materialize a fresh full document only when their public response contract requires one. Fact-level point operations use separate expected user-memory and fact revisions and may explicitly rebase when every addressed fact precondition still holds. Snapshot-derived operations such as scoped clear, capped create, consolidation, and trimming never replay stale delete/trim sets: a manifest conflict reloads the complete document and recomputes the operation, with a bounded retry. Fact paths use the first two hexadecimal characters of `SHA-256(fact_id)` so generated `fact_*` IDs distribute across shards. The cache token combines the shared JSON's nanosecond mtime, size, and persisted revision; this prevents coarse-mtime same-size writes from returning stale data without scanning fact files. Direct out-of-band Markdown edits require an explicit reload. Storage-specific conflicts and corruption are translated at the MemoryManager boundary; the Gateway returns conflict as HTTP 409 and a stable, non-sensitive corruption error as HTTP 500. Full-document `save()` remains a compatibility API and computes a diff before writing; malformed or missing `facts` can no longer silently erase an agent's Markdown files. Legacy migration preserves non-empty `user`/`history` before deleting an agent `memory.json`; conflicting summaries keep the legacy file and fail loudly instead of choosing a winner.
 
@@ -1603,6 +1652,12 @@ Current MVP capabilities:
 - Execute scheduled work through the normal DeerFlow run lifecycle
 - Browse execution history in pages of 50; older pages pause automatic refresh, with an explicit return to the latest runs. Counts appear only after a successful read; loading and failed reads are not reported as zero runs.
 
+**Filter execution history through the API**
+
+To inspect failures without downloading every successful occurrence, authenticated clients with `threads:read` can request `GET /api/scheduled-tasks/{task_id}/runs?status=failed&limit=50&offset=0` for an owned task. The optional `status` accepts `queued`, `launching`, `running`, `success`, `failed`, `skipped`, or `interrupted`; these are occurrence statuses, so task statuses such as `completed` are invalid (422).
+
+Filtering happens before pagination. `limit` (1–200, default 50) and `offset` (nonnegative, default 0) apply to matching records, ordered by creation time then ID, both descending. Omitting `status` preserves the existing mixed-history array response; no matches return `[]`. The API does not change task execution, and the workspace history UI remains unfiltered.
+
 Current MVP limits:
 
 - No conversation-created `schedule_task` tool yet
@@ -1637,6 +1692,13 @@ The response contains normalized `cron`, `timezone`, the effective UTC `start_at
 ## Terminal Workbench (TUI)
 
 `deerflow` is a terminal-native workbench for people who live in the shell. It runs **embedded** over `DeerFlowClient` — no Gateway, frontend, nginx, or Docker required — while honoring the same `config.yaml`, checkpointer, skills, memory, MCP, and sandbox settings as the rest of DeerFlow.
+
+Parallel synchronous stdio MCP calls use independent sessions on their own event
+loops. They do not cancel each other's connections, but they do not share
+server-side state; session reuse requires the same loop. See the
+[MCP session notes](backend/docs/MCP_SERVER.md) for details.
+Manually managed event loops must drain pending session owners before closing;
+the normal `asyncio.run()` path does this automatically.
 
 ![DeerFlow TUI](docs/tui/tui-preview.svg)
 
