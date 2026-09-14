@@ -1900,6 +1900,35 @@ sg docker -c 'docker logs --since 5m deer-flow-gateway 2>&1 \
 - **3a/3b:** clean boot, :2026 → 200, extensions_config.json md5 UNCHANGED (RW-mount watch), sentinel in sync, all invariants by instantiation (consolidation F / eviction confidence / authz F / heartbeat F / retrieval '' / plugins [] / subagent_batches F / head 0016).
 - **3c:** PW_STRONG PASS (first); chat×3 kimi/qwen/deepseek OK; sandbox bash `smoke-42` + present_files OK; subagent OK; thread-id 64 OK / 65 rejected; re-skin login 200 + WRI / 0 deerflow.tech / api 401; gateway log clean. (Smoke params per 08-24 lesson: recursion_limit 100, dot-free thread ids.)
 
+### 2026-09-14 sync — 38 commits, merge `a438b858`
+- **Merge CLEAN, zero conflicts.** Carried surfaces auto-merged and blob-verified: deploy.sh (upstream
+  refactored docker-socket handling to `read_dotenv_value`, Linux default preserved; redis-strip 0 refs +
+  2 prune lines intact), prompt.py (10-line touch; `<language>` intact), locales (keepers 3+3, zero
+  branded additions). Carried-patch table stays EMPTY.
+- **Schema:** head `0022_scheduled_occurrence_seq` → **`0023_user_preferences`** (single additive step,
+  #5397 browser-safe account preferences). Config v42 → **v43**: recursion-limit restructure — NEW
+  `recursion_limit: 100` server default; **`max_recursion_limit: 1000` ceiling UNCHANGED — verified by
+  instantiation (100/1000); the pipeline's client-supplied 400/500 stays safe.**
+- **Range highlights:** #5375 gateway input-sanitization bypass closes (external-caller class; embedded
+  smokes on real shapes green); embedded hot-path cluster #5408 (client streamed-tool-call emit-once —
+  the literal `deerflow.client` we drive) + #5393/#5401 idempotent reuse + #5395 cancellation lock +
+  #5374 write_file payload elision + #5410/#5424 goal/token-budget — chat×3/sandbox/subagent all green;
+  **#5254 deterministic near-duplicate FACT GATE on the live memory write path** — boot + 15m sweep
+  clean; WATCH: fact-write volume should DROP by design (pair with the #4604 scope-gate watch);
+  **#5396 MCP pooled sessions isolated by owning event loop** — PW_STRONG run FIRST, PASS; #5429
+  Unicode separators in JSONL events; #5431 SkillScan gate hardening (no custom skills); remote-provider
+  sandbox fixes (not our AIO path); opt-in `read_conversation` tool dormant.
+- **3a/3b:** clean boot, migration applied, 0 errors, :2026 → 200, no redis/provisioner; sentinel in
+  sync; extensions md5 `efba0945…` unchanged; invariants by instantiation (authz F / plugins [] /
+  scheduler F / task_continuity F / consolidation F / eviction confidence / image :1.11.0 / network
+  open / recursion 100/1000 / head 0023_user_preferences / 7 models).
+- **3c:** PW_STRONG PASS first; chat×3 qwen 5.7s / kimi 4.7s / deepseek 4.9s (64-char LGI-style id);
+  65-char + dotted rejected; sandbox hostname closed via docker events (`b4222a215290` =
+  `deer-flow-sandbox-b23397c541365599` ≠ gateway `4e348bc68fd6`) — qwen ran the probe properly this
+  time (the 12 Sep refusal did not recur; deepseek fallback stays the documented plan B);
+  present_files artifact exact; subagent SUB=1337; re-skin 47/0; api 401 / docs 404 / public 401;
+  log sweep 15m ZERO (also covers the #5254 fact-gate boot).
+
 ### 2026-09-12 sync — `main`@`e20b36b3`-range tip (30 commits), merge `c6191a6d`
 - **Merge CLEAN, zero conflicts.** Two carried files auto-merged and verified in the blob: `deploy.sh`
   (upstream added a Windows Git Bash DooD socket guard #5371 — inert on Linux; our redis-strip 0 refs +
