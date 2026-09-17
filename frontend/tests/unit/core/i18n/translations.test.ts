@@ -9,7 +9,8 @@ describe("core copy loading", () => {
       loadTranslations("zh-CN"),
     ]);
     expect(english.inputBox.disclaimer).toBe(
-      "DeerFlow is AI and can make mistakes",
+      // re-skin (be0139fa): our carried disclaimer drops the brand name
+      "AI can make mistakes",
     );
     expect(chinese.inputBox.disclaimer).toBe(
       "内容由AI生成，重要信息请务必核查",
