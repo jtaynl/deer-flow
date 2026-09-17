@@ -1900,6 +1900,47 @@ sg docker -c 'docker logs --since 5m deer-flow-gateway 2>&1 \
 - **3a/3b:** clean boot, :2026 → 200, extensions_config.json md5 UNCHANGED (RW-mount watch), sentinel in sync, all invariants by instantiation (consolidation F / eviction confidence / authz F / heartbeat F / retrieval '' / plugins [] / subagent_batches F / head 0016).
 - **3c:** PW_STRONG PASS (first); chat×3 kimi/qwen/deepseek OK; sandbox bash `smoke-42` + present_files OK; subagent OK; thread-id 64 OK / 65 rejected; re-skin login 200 + WRI / 0 deerflow.tech / api 401; gateway log clean. (Smoke params per 08-24 lesson: recursion_limit 100, dot-free thread ids.)
 
+### 2026-09-17 sync — 47 commits, merge `3a13dac4`
+- ⚠⚠ **HEADLINE TRAP — UPSTREAM REWIRED AN ALREADY-APPLIED MIGRATION.** The range inserts
+  `0023_run_change_seq` (runs.change_seq + run_change_clock + 2 indexes) BENEATH
+  `0023_user_preferences` — which we applied 14 Sep with down_revision=0022. Post-merge, alembic
+  treats the new node as an ancestor of our current version and **silently skips its DDL** while
+  applying `0024_project_documents` on top. **Remedy (worked, proven): PRE-APPLY the skipped
+  migration's DDL to the DB before the rebuild** — it is fully idempotent (safe_add_column /
+  inspector-guarded) so plain `IF NOT EXISTS` SQL via the running gateway's asyncpg matches it;
+  boot then upgraded `0023_user_preferences -> 0024` exactly as predicted and the **sentinel
+  confirmed "schema in sync"**. 📌 LESSON: when upstream re-parents around an applied revision,
+  diff EVERY migration file in the range (not just new names) and pre-apply the skipped DDL —
+  the sentinel validates closure. **3b head is now `0024_project_documents`.**
+- **Merge:** one conflict, `settings-dialog.tsx` (carried chrome × #5468 restructure): resolved
+  keep-OURS (About stays out of the menu) + upstream's removals (skills/tools/integrations moved
+  out of Settings). Locales: upstream added ONE branded string per locale (capabilities-section
+  description) — rebranded to "WRI AI" (**tally 30 en / 29 zh; keepers back to 3+3**).
+  📌 THIRD dangling-test-class find: `translations.test.ts` carried the un-rebranded
+  `"DeerFlow is AI and can make mistakes"` disclaimer literal SINCE THE 24 AUG merge (`pnpm test`
+  broken unnoticed — deploy path only runs build); patched to our carried string at merge time.
+  deploy.sh/Dockerfile/prompt.py/compose all intact.
+- **Config v43 → v45** (two bumps): `request_admission` per-model RPM pacing — absent unless
+  configured in a model entry (ours have none; verified `<no attr>` at top level); `projects`
+  section = limits-only (instructions_max_bytes 8192, shelf 50/4096, trash 30d — no enabled
+  flag; UI-driven, inert unused).
+- **Range highlights:** ⚠ **#5488 makes `create_deerflow_agent`'s subagent limit, SUMMARIZATION
+  and TOKEN_BUDGET take effect** — previously partly inert on the embedded path; our configured
+  `summarization 32000` is now genuinely live on long pipeline runs (intended config finally
+  working — WATCH the first post-sync LGI/watch-brief runs for summarization behaviour);
+  #5178 AIO subagent session eviction fix (our provider — subagent smoke green); #5474/#5478
+  read_file truncation reworked (line-boundary cut + named next start_line — adjacent to the
+  ResponseFileReadResult WATCH); #5444 browser teardown alive across cancellation (PW_STRONG
+  first — PASS); #5479 client emit fix; #5459 model FIFO admission; Projects Phase 2 bulk.
+- **3a/3b:** deploy clean; migration path exactly as predicted; 0 errors; :2026 → 200; sentinel
+  IN SYNC (validates the pre-apply); extensions md5 unchanged; invariants by instantiation
+  (recursion 100/1000, task_continuity F, consolidation F, eviction confidence, image :1.11.0,
+  network open, head 0024_project_documents).
+- **3c:** PW_STRONG PASS first; chat×3 (qwen 6.7s / kimi 10.8s / deepseek 1.9s); thread-id
+  contract intact; sandbox hostname closed via docker events (`7de70a8441e6` =
+  `deer-flow-sandbox-68c019d95b807a91` ≠ gateway); present_files exact; SUB=1337; re-skin 47/0;
+  api 401 / docs 404 / public 401; log sweep 12m ZERO.
+
 ### 2026-09-14 sync — 38 commits, merge `a438b858`
 - **Merge CLEAN, zero conflicts.** Carried surfaces auto-merged and blob-verified: deploy.sh (upstream
   refactored docker-socket handling to `read_dotenv_value`, Linux default preserved; redis-strip 0 refs +
