@@ -1900,6 +1900,42 @@ sg docker -c 'docker logs --since 5m deer-flow-gateway 2>&1 \
 - **3a/3b:** clean boot, :2026 → 200, extensions_config.json md5 UNCHANGED (RW-mount watch), sentinel in sync, all invariants by instantiation (consolidation F / eviction confidence / authz F / heartbeat F / retrieval '' / plugins [] / subagent_batches F / head 0016).
 - **3c:** PW_STRONG PASS (first); chat×3 kimi/qwen/deepseek OK; sandbox bash `smoke-42` + present_files OK; subagent OK; thread-id 64 OK / 65 rejected; re-skin login 200 + WRI / 0 deerflow.tech / api 401; gateway log clean. (Smoke params per 08-24 lesson: recursion_limit 100, dot-free thread ids.)
 
+### 2026-09-18 sync — 38 commits, merge `5bf7dbc3` (`main`@`f9f3127d`)
+- **Merge:** CLEAN, zero conflicts; locales pure additions (+122 lines incl. required `types.ts`
+  fields) — keepers 3+3 verified. ⚠ Tally note: "WRI AI" counts were ALREADY 37 en / 36 zh
+  PRE-merge (the recorded 30/29 was stale — recount the baseline before reading a jump as a merge
+  artifact). All carries intact (lead_agent `prompt.py` `<language>`, Dockerfile markers,
+  compose redis-strip; the dormant `provisioner:` compose block predates this range — the
+  operative invariant is the RUNNING container set, asserted at 3a).
+- **Headline:** upstream `#5517` ships **`0025_repair_run_change_seq`** — the official repair for
+  the EXACT 17 Sep re-parent trap (its docstring describes our scenario verbatim: DBs at
+  `0023_user_preferences` skipped the inserted node; first thread deletion would crash on the
+  missing `run_change_clock`). Our 17 Sep pre-apply used matching object names
+  (`ix_runs_change_seq`, `ix_runs_user_change_seq` — verified in the live DB pre-merge), so 0025
+  **no-ops cleanly**: boot log `0024 -> upgrade head (0025_repair_run_change_seq)`, sentinel
+  "schema in sync". **3b head expectation is now `0025_repair_run_change_seq`.**
+- **`#5080` provider-boundary response-recovery rework (~1,200 lines incl. `PatchedChatDeepSeek`)**
+  — highest-risk commit for us (deepseek-v4-pro = stage-1 fallback + the new watch-brief
+  moderation fallback). Smoked plain (`CHAT_OK` 2.2s) AND thinking-enabled (`DSK_THINK_OK` — new
+  permanent battery line) — both green.
+- **Config:** example UNCHANGED (stays v45). `#5251` retrieval relevance ranking verified opt-in
+  OFF by instantiation (`retrieval_relevance_enabled False`, weight 0.5 inert); consolidation
+  False / eviction `confidence` unchanged. ⚠ `probe_3b_inside.py`'s root-level DeerMem import is
+  STALE (the class still lives at `backends.deermem.deer_mem`) — the deep-import probe is the
+  valid check; ignore the probe's own ImportError line.
+- **3a:** 3 containers (no redis/provisioner running), 0025 applied at boot, startup complete,
+  0 tracebacks, :2026 → 200. extensions_config.json md5 `efba0945` unchanged.
+- **3c (ALL_OK 9/9):** PW_STRONG PASS (first); chat×3 kimi/qwen/deepseek; deepseek-thinking;
+  thread-id 65-char + dotted rejected (contract unchanged; `#5506`'s new pagination validator is
+  on assistants-compat search, which none of our callers use); **sandbox hostname `3ad12b5ac56e`
+  matched to the daemon's own events** (create/start 16:33:23Z, `deerflow.role=sandbox`, image
+  `:1.11.0`, ≠ gateway) — unguessable-value close; present_files DONE (⚠ `ResponseFileReadResult`
+  validation noise AGAIN — standing WATCH, non-fatal, file presented); subagent `SUB=1337`.
+- **Also in range:** nginx read-timeout raises for `/api/threads` + `/api/` catch-all
+  (`#5505`/`#5524`, upstream-owned); `#4063` Phase 4 skill-visibility authz (no-op with
+  authorization off); scheduled-task fixes `#5330`/`#5348`/`#5355`; uploads symlink-deletion fix
+  `#5547`; version 2.1.0-rc0. Backup: `~/deer-flow-sync-backups/` latest (⚠ `ls -la` to see `.env`).
+
 ### 2026-09-17 sync — 47 commits, merge `3a13dac4`
 - ⚠⚠ **HEADLINE TRAP — UPSTREAM REWIRED AN ALREADY-APPLIED MIGRATION.** The range inserts
   `0023_run_change_seq` (runs.change_seq + run_change_clock + 2 indexes) BENEATH
