@@ -337,7 +337,26 @@ reachable from the Gateway container or Pod; `localhost` refers to that
 container or Pod, not the host machine.
 
 This integration is retrieval-only. Dataset creation, uploads, parsing, and
-deletion remain in RAGFlow and are not exposed as Agent tools or DeerFlow APIs.
+deletion remain in RAGFlow and are not exposed as Agent tools, workspace pages,
+or DeerFlow APIs. The authenticated `/api/knowledge/retrieval-catalog` routes
+exist only to populate the custom-agent chat selector. The provider-neutral
+`knowledge_base` block only gates DeerFlow's knowledge capability and selector;
+configure the RAGFlow connection and retrieval defaults on the
+`tools[].name: knowledge_search` entry shown above:
+
+```yaml
+knowledge_base:
+  enabled: true
+  scope_selection_enabled: true
+```
+
+When enabled, include the `list_knowledge_bases` tool entry shown above if the
+model should be able to discover configured dataset names. The frontend uses
+`GET /api/features -> knowledge_base` only to gate the custom-agent chat
+selector. RAGFlow API keys and dataset UUIDs are never returned to the browser
+or model. Do not put RAGFlow-specific connection, allowlist, or retrieval
+parameters in `knowledge_base`; they are read only from the provider tool
+entry, so different knowledge providers can use their own settings.
 
 ### LightRAG Knowledge Retrieval
 
@@ -485,8 +504,23 @@ tools:
     group: web
     use: deerflow.community.tavily.tools:web_search_tool
     max_results: 5
+    include_domains:             # Optional: limit search sources to these domains
+      - docs.python.org
+      - developer.mozilla.org
+    exclude_domains: []         # Optional: domains to exclude from search results
     # api_key: $TAVILY_API_KEY  # Optional
 ```
+
+For Tavily, `include_domains` and `exclude_domains` are deployment-only options
+read from the `web_search` tool entry and passed directly to `TavilyClient.search`.
+For a non-empty `include_domains`, DeerFlow also sends `include_domains_mode: filter`
+so Tavily restricts results to those domains rather than merely boosting them.
+Either list may be configured independently. Omitted options are not added to the SDK
+call; explicit empty lists are forwarded as `[]`, meaning no inclusion restriction
+or no excluded domains, respectively. No `include_domains_mode` is sent for an
+empty or omitted `include_domains`. These filters compose with `max_results`
+and the model's optional `time_range`. The model-visible arguments remain `query`
+and `time_range`; the filters do not apply to `web_fetch` or other search providers.
 
 **Built-in Tools**:
 - `web_search` - Search the web (DuckDuckGo, Tavily, Brave, Serply, Exa, InfoQuest, Tencent Cloud WSA, Firecrawl, fastCRW, GroundRoute, Sofya)
