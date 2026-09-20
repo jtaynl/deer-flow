@@ -1900,6 +1900,44 @@ sg docker -c 'docker logs --since 5m deer-flow-gateway 2>&1 \
 - **3a/3b:** clean boot, :2026 → 200, extensions_config.json md5 UNCHANGED (RW-mount watch), sentinel in sync, all invariants by instantiation (consolidation F / eviction confidence / authz F / heartbeat F / retrieval '' / plugins [] / subagent_batches F / head 0016).
 - **3c:** PW_STRONG PASS (first); chat×3 kimi/qwen/deepseek OK; sandbox bash `smoke-42` + present_files OK; subagent OK; thread-id 64 OK / 65 rejected; re-skin login 200 + WRI / 0 deerflow.tech / api 401; gateway log clean. (Smoke params per 08-24 lesson: recursion_limit 100, dot-free thread ids.)
 
+### 2026-09-20 sync — 39 commits, merge `b70be454` (`main`@`1e3bfa09`)
+- **Merge:** 2 conflicts, BOTH the recurring locale surface (en-US/zh-CN: our rebranded settings
+  `description` vs upstream's line + the new `models:` settings block) — resolved keep-OURS + graft.
+  Re-skin absorbed **4 new branded strings/locale** (channels `nativeHint` + 3 WeChat-QR strings,
+  `#5582`) → **tally 41 en / 40 zh, keepers 3+3**; dangling-test sweep clean.
+- **⚠ CARRIED-SURFACE REWRITE, SURVIVED + NEWLY PROVEN:** `#4919` replaced lead_agent prompt.py's
+  static clarification prose with `RunInteractionPolicy` template fields (−71 lines). AUTO-merged;
+  our `<language>` block survived INSIDE `SYSTEM_PROMPT_TEMPLATE`. **NEW PERMANENT 3b PROBE:
+  `language_block_in_template`** — asserts the block sits in the rendered template at runtime
+  (template membership survives `.format()` by construction), not merely in the file.
+- **⚠ NEW PERMANENT INVARIANT — `pii_redaction` OFF (`#5527`):** upstream added deterministic PII
+  redaction for model-bound context (config `pii_redaction.enabled`, example default false; module
+  passes text through unchanged when disabled — verified in code). Enabled, it would rewrite
+  emails/phones in web_fetch results to `[EMAIL_1]` placeholders — corrupting research-brief
+  fidelity and DESTROYING outreach contact discovery. Probe records
+  `pii_redaction_enabled: false` by instantiation; NEVER enable on this instance.
+- **Migration `0026_mcp_task_lease_tokens`**: linear from 0025, two idempotent `safe_add_column`s
+  on `mcp_tasks` (feature off, 0 rows). Applied at boot (`0025 -> 0026`), sentinel in sync.
+  **3b head expectation now `0026_mcp_task_lease_tokens`.**
+- **`#5596` shared-models Settings surface**: writes `runtime_home()/managed-models/catalog.enc`
+  (own encrypted file) — `config.yaml` untouched/RO. Joins the `#4852` watch class: re-verify
+  after ANY Settings-UI model management. ⚠ NOTE: example config lives at REPO ROOT
+  `config.example.yaml` (a `backend/`-pathed diff silently shows nothing).
+- **3a:** 3 containers, boot clean, 0 tracebacks, :2026 → 200, extensions md5 `efba0945` unchanged.
+  **3b:** sentinel in sync; all invariants by instantiation incl. the two NEW probes; deep DeerMem
+  consolidation F / eviction confidence / relevance F. **3c ALL_OK 9/9:** PW_STRONG first;
+  chat×3 + deepseek-thinking; thread-id contract; sandbox hostname `2ea514ba158f` matched to
+  daemon create/start events (role=sandbox, `:1.11.0`, ≠ gateway); present_files; subagent
+  `SUB=1337` — ⚠ WATCH: subagent reply narrated durable-context state (`already delegated…
+  in_progress`, `#5569`/durable-context middleware surfacing) — correct result, new phrasing;
+  watch longer runs for todo/durable-context chatter on the embedded path.
+- **Also in range:** `#5578` embedded-upload symlink fix (client path, smoked); `#5563`
+  content-less-message handling; `#5602` LLM circuit fencing; `#5546` sandbox probe subshell fix;
+  `#5528` composer authz gate (no-op, authorization off); `#5545` MarkdownMemoryStorage (opt-in,
+  inert — backend is DeerMem); `#5555` memory config errors by key name (our `model: None` loads
+  fine, proven by instantiation); anyio 4.13→4.14. Backup: `~/deer-flow-sync-backups/` latest
+  (`ls -la` to see `.env`).
+
 ### 2026-09-18 sync — 38 commits, merge `5bf7dbc3` (`main`@`f9f3127d`)
 - **Merge:** CLEAN, zero conflicts; locales pure additions (+122 lines incl. required `types.ts`
   fields) — keepers 3+3 verified. ⚠ Tally note: "WRI AI" counts were ALREADY 37 en / 36 zh
