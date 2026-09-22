@@ -1900,6 +1900,32 @@ sg docker -c 'docker logs --since 5m deer-flow-gateway 2>&1 \
 - **3a/3b:** clean boot, :2026 → 200, extensions_config.json md5 UNCHANGED (RW-mount watch), sentinel in sync, all invariants by instantiation (consolidation F / eviction confidence / authz F / heartbeat F / retrieval '' / plugins [] / subagent_batches F / head 0016).
 - **3c:** PW_STRONG PASS (first); chat×3 kimi/qwen/deepseek OK; sandbox bash `smoke-42` + present_files OK; subagent OK; thread-id 64 OK / 65 rejected; re-skin login 200 + WRI / 0 deerflow.tech / api 401; gateway log clean. (Smoke params per 08-24 lesson: recursion_limit 100, dot-free thread ids.)
 
+### 2026-09-22 sync — 46 commits, merge `226ac537` (`main`@`c9043c25`)
+- **Cleanest range in weeks: ZERO conflicts, NO migrations (head stays `0026_mcp_task_lease_tokens`),
+  ALL carried surfaces untouched** (incl. lead_agent prompt.py; locale +87 lines carry no branding —
+  keepers 3+3, tally 41 en / 40 zh unchanged). Example-config changes are docs-only (commented
+  llama.cpp recipe, sandbox banner move, timeout documentation).
+- **`#5651` security hardening WORKS FOR US:** gateway now rejects client-supplied system/developer-
+  role messages with HTTP 400 (injection prevention; existing checkpoints not rewritten). Our
+  embedded callers send user-role only — no-op, contract proven by the 3c chat replays.
+- **`#5634` sandbox bash timeouts now SERVER-enforced** via `hard_timeout` on 1.9.3+ images (ours:
+  1.11.0): resolved default recorded by the 3b probe — **`sandbox_bash_command_timeout: 600.0`**
+  (new permanent probe line). Our sandbox commands are short; no impact observed.
+- **`#5614` (stale-todo discard at compaction) looks to have quieted the `#5569` durable-context
+  chatter**: this sync's subagent smoke returned a clean `SUB=1337` with no narration — WATCH
+  downgraded, keep one eye on long runs.
+- **Also in range:** `#5718` DeepSeek managed profiles (deepseek plain + thinking smokes green,
+  1.7s/2.5s); `#5647` plugin APIs (inert, `plugins []` by instantiation); `#5643` MCP stdio cwd
+  (our playwright config sets none — PW_STRONG green); skills cluster + drain-across-cancellation
+  cluster (boot clean); `#5723` image-search filters (config additive).
+- **3a:** 3 containers, boot clean (`0026 -> 0026`, no-op upgrade line), 0 tracebacks, :2026 → 200,
+  extensions md5 `efba0945` unchanged. **3b:** sentinel in sync; all invariants by instantiation
+  (pii_redaction False, language_block True, consolidation False, eviction confidence, relevance
+  False, recursion 100/1000). **3c ALL_OK 9/9:** PW_STRONG first; chat×3 + deepseek-thinking;
+  thread-id contract; sandbox hostname `f747234aaee3` = daemon create event (role=sandbox,
+  `:1.11.0`); present_files; subagent clean. Gateway log clean. Backup:
+  `~/deer-flow-sync-backups/` latest (`ls -la` for `.env`).
+
 ### 2026-09-20 sync — 39 commits, merge `b70be454` (`main`@`1e3bfa09`)
 - **Merge:** 2 conflicts, BOTH the recurring locale surface (en-US/zh-CN: our rebranded settings
   `description` vs upstream's line + the new `models:` settings block) — resolved keep-OURS + graft.
