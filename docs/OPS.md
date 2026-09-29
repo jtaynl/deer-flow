@@ -1900,6 +1900,48 @@ sg docker -c 'docker logs --since 5m deer-flow-gateway 2>&1 \
 - **3a/3b:** clean boot, :2026 → 200, extensions_config.json md5 UNCHANGED (RW-mount watch), sentinel in sync, all invariants by instantiation (consolidation F / eviction confidence / authz F / heartbeat F / retrieval '' / plugins [] / subagent_batches F / head 0016).
 - **3c:** PW_STRONG PASS (first); chat×3 kimi/qwen/deepseek OK; sandbox bash `smoke-42` + present_files OK; subagent OK; thread-id 64 OK / 65 rejected; re-skin login 200 + WRI / 0 deerflow.tech / api 401; gateway log clean. (Smoke params per 08-24 lesson: recursion_limit 100, dot-free thread ids.)
 
+### 2026-09-29 sync — 176 commits, merge `5cc9b125` (`main`@`8a3a309d`; range includes the **v2.1.0** tag, main now 2.2.0-dev)
+- **Merge CLEAN (merge-tree exit 0, zero conflicts), NO migrations (head stays `0026_mcp_task_lease_tokens`,
+  bootstrap `0026 -> 0026` no-op), ALL carried surfaces intact:** locales +21/+19 lines with ZERO branding
+  strings (keepers 3+3, tally 41 en / 40 zh unchanged); lead_agent `prompt.py` gains `#5794`'s overlay hook
+  AFTER our `<language>` block (`language_block_in_template: true`); Dockerfile untouched (7 markers = 7);
+  compose keeps redis-strip and gains `#5900`'s nginx launcher (strips the IPv6 listen only when the kernel
+  lacks IPv6 — this host HAS IPv6, inert); `scripts/deploy.sh` gains `#5928`'s Compose-based `.env` secret
+  probe (no-op: our BETTER_AUTH_SECRET / internal token live in the persisted `backend/.deer-flow/.*` files,
+  not `.env`; Compose v5.1.4 supports the probe); auth pages 0 `deerflow.tech`; extensions md5 `efba0945`.
+- **Behaviour changes judged for this instance:** `#4989` route permissions on threads/runs/memory/agents
+  → no-op (`authorization.enabled: false` = legacy allow-all, by instantiation) and its per-user USER.md
+  scoping had nothing to migrate (no global USER.md existed); `#5734` langgraph-checkpoint 4.1.1→**4.2.0**
+  + postgres saver 3.1.1→**3.1.2** (installed, verified in-container; langgraph-owned tables, no new
+  migration line at boot; our `checkpoint_channel_mode: full` so the delta fixes don't apply);
+  `#5966` personal MCP connections are additive — the deployment-scope path our playwright MCP uses is
+  unchanged (PW_STRONG green); new strict config validators (`#6009` pool/command_timeout, `#5997`/`#5944`
+  sandbox timeouts, `#5920` upload limits, `#5838` request_admission) all pass on our integer values;
+  `pii_redaction` STILL OFF (no block in config.yaml; the new `token_secret` requirement bites only when
+  enabled — NEVER enable); `config_version` 46→50 upstream (ours 34 = warning only). Also in range:
+  `#5981` Unbrowse web_fetch provider (opt-in, unused), `#5934` nginx location for project-document uploads
+  (additive), `#5758` skill snapshots in answer details, 14 Security entries (owner isolation on threads
+  with missing metadata rows, atomic first-admin claim, `model:use` on suggestions, thread-scoped image
+  reads, external system/developer-role rejection carried from 09-22).
+- **📌 OPTION for a later sync (not done): retire the carried `<language>` source patch** by moving the
+  block to `lead_prompt_overlay.append` in `config.yaml` (`#5794`, literal text wrapped around the
+  assembled prompt). Would change the 3b probe from template-membership to overlay-rendering; owner's call.
+- **3a:** 3 containers, `Application startup complete`, 0 tracebacks, bootstrap advisory lock → `0026 ->
+  0026`, app :2026 → 200, `/login` → 200. **3b:** sentinel `schema in sync — no missing columns`; probe
+  `ok: true` — pii_redaction False, language_block True, alembic head STRING `0026_…`, sandbox timeout
+  600.0, authorization False, plugins [], recursion 100/1000, sandbox image `:1.11.0` network open; deep
+  DeerMem: consolidation False, eviction confidence, relevance False; 7 models incl. qwen3.7-plus /
+  qwen3.8-max / kimi-k3. **3c ALL_OK 9/9:** PW_STRONG PASS FIRST (WRI AI title via the real spawn); chat×3
+  qwen/kimi/deepseek CHAT_OK (6.6/3.7/6.3 s) + deepseek-thinking DSK_THINK_OK; thread-id 65-char and dotted
+  both rejected (ValueError); sandbox hostname `b4c6f7202bf4` = daemon `container create` event
+  (role=sandbox, network open); present_files DONE; subagent `SUB=1337` clean. Gateway log clean.
+- **⚙ Probe maintenance:** `probe_3b_inside.py` now imports DeerMem by the deep path
+  (`deerflow.agents.memory.backends.deermem.deer_mem`) and reads `consolidation_enabled` directly — the
+  shallow package export no longer exists; the old shallow branch reported a false DeerMem failure. **The
+  three scripts (`probe_3b_inside.py`, `smoke_pw3_inside.py`, `smoke_embedded_inside.py`) now live
+  PERSISTENTLY in `~/deer-flow-sync-backups/`** (they only ever existed in a session scratchpad under
+  /tmp before). Backup: `~/deer-flow-sync-backups/20260928-2352/` (`ls -la` for `.env`).
+
 ### 2026-09-22 sync — 46 commits, merge `226ac537` (`main`@`c9043c25`)
 - **Cleanest range in weeks: ZERO conflicts, NO migrations (head stays `0026_mcp_task_lease_tokens`),
   ALL carried surfaces untouched** (incl. lead_agent prompt.py; locale +87 lines carry no branding —
