@@ -143,11 +143,28 @@ sg docker -c 'docker exec deer-flow-gateway sh -lc "cd /app/backend && PYTHONPAT
 #     (exits 1 on a missing column; --apply still backfills missing columns but with alembic that is a no-op.
 #      If 0002's safe_add_column WARNs about server_default/type drift on a PRE-EXISTING column — as on the
 #      2026-06-25 sync for runs.token_usage_by_model — apply the one canonical ALTER by hand; see that entry.)
+# 3b-2. INVARIANTS BY INSTANTIATION (never a config dump). The probe + smoke scripts live PERSISTENTLY in
+#       ~/deer-flow-sync-backups/ (since 2026-09-29; they were /tmp-only before). Expect `"ok": true, "fails": []`:
+#       pii_redaction False, language_block_in_template FALSE + language_overlay_rendered_count 1 (the <language>
+#       rule lives in config.yaml lead_prompt_overlay.append since 2026-09-29), alembic head STRING, sandbox
+#       bash timeout 600.0, authorization False, consolidation False, eviction confidence, models present.
+sg docker -c 'docker exec -i -w /app/backend -e PYTHONPATH=/app/backend deer-flow-gateway .venv/bin/python -' < ~/deer-flow-sync-backups/probe_3b_inside.py
 
 # 3c. SMOKE A REAL CHAT RUN — HTTP 200 + "startup complete" do NOT exercise the run/persist path (that's
 #     how the 2026-06-21 token_usage_by_model 500 slipped through). Open https://<domain>/workspace/chats/new
 #     and send one message; confirm it streams a reply (no 500). Then check the gateway log is clean:
 sg docker -c 'docker logs --since 3m deer-flow-gateway 2>&1 | grep -iE "error|traceback|UndefinedColumn|500" | grep -v PendingDeprecation'   # expect no output
+# 3c-2. THE SMOKE BATTERY, in this order (each runs INSIDE the gateway; one JSON line per smoke):
+#       (1) smoke_pw3_inside.py — PW_STRONG, ALWAYS FIRST: the only trustworthy browser gate (agent-path smokes
+#           print OK on a dead browser via the Jina fallback); expect `PW_STRONG PASS  WRI AI`.
+#       (2) smoke_embedded_inside.py — chat×3 + deepseek-thinking, thread-id contract (65 chars / dots rejected),
+#           sandbox hostname (close it ONLY by a `docker events … create` match on that hostname), present_files,
+#           subagent; expect `{"summary": "ALL_OK"}`.
+#       (3) smoke_language_inside.py — the <language> rule: EN→EN, ZH→ZH on qwen + deepseek, EN-then-ZH turn
+#           switch on one thread; expect `{"summary": "LANG_OK"}`.
+for f in smoke_pw3_inside smoke_embedded_inside smoke_language_inside; do
+  sg docker -c 'docker exec -i -w /app/backend -e PYTHONPATH=/app/backend deer-flow-gateway .venv/bin/python -' < ~/deer-flow-sync-backups/$f.py
+done
 
 # 4. Push (NO force — a merge appends; it never rewrites history).
 git push origin local-fixes
