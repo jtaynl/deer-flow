@@ -1194,10 +1194,11 @@ Both categories still conflict, so treat this list as the checklist after every 
 | `.dockerignore` | excludes `backend/.deer-flow/` | keeps the 33 MB runtime memory store out of the build context |
 | `scripts/deploy.sh` | our deploy wrapper | instance-specific |
 | `backend/scripts/schema_sync.py` | schema-drift **read-only sentinel** (`5e75178e`) | alembic OWNS DDL; this only *reports* drift |
-| `backend/packages/harness/deerflow/agents/lead_agent/prompt.py` | a `<language>` block — always answer in the user's language, default English | our users are English-first |
 
 ⚠ `.env` also carries `UV_EXTRAS=postgres` (gitignored, so it is NOT in the diff above — restore it by hand
-if the file is ever recreated). `config.yaml` is likewise gitignored/instance-only (models incl. `kimi-k3`).
+if the file is ever recreated). `config.yaml` is likewise gitignored/instance-only (models incl. `kimi-k3`) **and, since 2026-09-29, carries the LOAD-BEARING `lead_prompt_overlay.append` block = the `<language>` rule
+(moved out of `prompt.py`, see "Moved to instance config" below). If `config.yaml` is ever rebuilt from the example the
+language rule is GONE until that block is restored — copies in `~/deer-flow-sync-backups/*/config.yaml`.**
 
 ### WRI re-skin (the recurring conflict surface)
 | Path(s) | What we carry |
@@ -1213,10 +1214,23 @@ if the file is ever recreated). `config.yaml` is likewise gitignored/instance-on
 **DELIBERATELY NOT rebranded in either locale:** `officialWebsite`, `githubTooltip`, `visitGithub` — they
 factually reference `bytedance/deer-flow`, and their nav entries are already removed.
 
+**Post-sync checklist for the language rule:** the 3b probe must report `language_block_in_template: false` and
+`language_overlay_rendered_count: 1` (the rule lives in `config.yaml`, not in git).
+
 **Post-sync checklist for the re-skin:** upstream edits these files often (they conflicted on 07-19 and
 07-26). After any sync that touches them: re-apply, rebuild, then verify —
 `grep -c DeerFlow frontend/src/core/i18n/locales/{en-US,zh-CN}.ts` should be **3 each**, and
 `/login` + `/setup` must return 200 with WRI branding and zero `deerflow.tech` references.
+
+### Moved to instance config (no longer a source patch)
+- **`lead_agent/prompt.py` `<language>` block → `config.yaml` `lead_prompt_overlay.append` (2026-09-29, upstream `#5794`).**
+  Byte-equivalence was proven on the live container BEFORE the switch: upstream's template + the overlay renders the
+  identical 25,543-char prompt with the block moved from after `</role>` to the very end (exactly one occurrence).
+  The 3b probe now asserts `language_block_in_template: false`, `language_overlay_rendered_count: 1`,
+  `language_overlay_at_end: true`, `lead_prompt_overlay_append_set: true`. **No backend source file is carried any
+  more** — `git diff --name-only upstream/main...local-fixes` shows deployment config + the re-skin only.
+  ⚠ DUPLICATE trap of the FOWNER kind: should upstream ever ship its own `<language>` block in the template, the
+  rendered prompt would carry two — the probe's count=1 assertion is the tripwire.
 
 ### Absorbed upstream (no longer carried)
 - `--cap-add=FOWNER` in `community/aio_sandbox/local_backend.py` (`47fbb879`, 2026-08-28) — absorbed
@@ -1923,7 +1937,7 @@ sg docker -c 'docker logs --since 5m deer-flow-gateway 2>&1 \
   (additive), `#5758` skill snapshots in answer details, 14 Security entries (owner isolation on threads
   with missing metadata rows, atomic first-admin claim, `model:use` on suggestions, thread-scoped image
   reads, external system/developer-role rejection carried from 09-22).
-- **📌 OPTION for a later sync (not done): retire the carried `<language>` source patch** by moving the
+- **📌 OPTION — DONE the same night (2026-09-29 01:14 UTC, see the addendum at the end of this entry): retire the carried `<language>` source patch** by moving the
   block to `lead_prompt_overlay.append` in `config.yaml` (`#5794`, literal text wrapped around the
   assembled prompt). Would change the 3b probe from template-membership to overlay-rendering; owner's call.
 - **3a:** 3 containers, `Application startup complete`, 0 tracebacks, bootstrap advisory lock → `0026 ->
@@ -1941,6 +1955,27 @@ sg docker -c 'docker logs --since 5m deer-flow-gateway 2>&1 \
   three scripts (`probe_3b_inside.py`, `smoke_pw3_inside.py`, `smoke_embedded_inside.py`) now live
   PERSISTENTLY in `~/deer-flow-sync-backups/`** (they only ever existed in a session scratchpad under
   /tmp before). Backup: `~/deer-flow-sync-backups/20260928-2352/` (`ls -la` for `.env`).
+
+- **ADDENDUM 2026-09-29 01:11–01:25 UTC — the `<language>` carry RETIRED** (owner: "before doing it, ensure you check
+  it is safe … and not breaking anything"). Safety proof on the LIVE container before any change: our `prompt.py` diff vs
+  upstream = exactly the 4 block lines; template-minus-block == upstream's template; the candidate `config.yaml` loads
+  under the new code and differs from the live config in `lead_prompt_overlay` ONLY; rendering through the runtime's own
+  `apply_prompt_template` with upstream's template + the overlay = the IDENTICAL 25,543-char prompt with the block moved
+  to the very end (count 1); without the overlay the rule vanishes (→ LOAD-BEARING); `resolve_env_variables` rewrites
+  only strings that START with `$` (block untouched); every renderer (lead agent + `DeerFlowClient`) goes through that
+  one function. Stack idle (no sandboxes, no runs for 15 min, crons hours away).
+  **Switch** (the owner ran the command — the auto-mode classifier refused my deploy call as a production deploy):
+  backup `~/deer-flow-sync-backups/20260929-0111-overlay/` → `make down` → candidate config in → `git checkout
+  upstream/main -- …/lead_agent/prompt.py` → `make up` (~6 min). **3a** clean (startup complete, 0 tracebacks,
+  `0026 -> 0026`, :2026 + `/login` 200, extensions md5 `efba0945`). **3b** sentinel in sync; probe `ok: true` with the
+  NEW invariants `language_block_in_template: false` / `language_overlay_rendered_count: 1` /
+  `language_overlay_at_end: true` / `lead_prompt_overlay_append_set: true`, every prior invariant unchanged.
+  **3c** PW_STRONG PASS first; battery ALL_OK 9/9 (sandbox `f4053775e667` = daemon create event; subagent
+  `SUB=1337`); NEW `smoke_language_inside.py` **LANG_OK 4/4** — English→English, Chinese→Chinese on qwen AND deepseek,
+  and an English-then-Chinese turn switch on ONE thread answered in Chinese (the "most recent message" semantics).
+  Gateway log clean. `prompt.py` is upstream byte-for-byte (`git diff upstream/main -- prompt.py` empty): **no backend
+  source file is carried any more.** Scripts persisted in `~/deer-flow-sync-backups/`: `probe_3b_inside.py`,
+  `smoke_pw3_inside.py`, `smoke_embedded_inside.py`, `smoke_language_inside.py`.
 
 ### 2026-09-22 sync — 46 commits, merge `226ac537` (`main`@`c9043c25`)
 - **Cleanest range in weeks: ZERO conflicts, NO migrations (head stays `0026_mcp_task_lease_tokens`),
