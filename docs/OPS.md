@@ -677,9 +677,10 @@ entirely on Opus 4.7 for exactly this reason — see the Claude tuning
 section above.) But the marginal accuracy gain is still real, and the
 cost is nil.
 
-This deployment runs `temperature: 0.5` across all five active models
-(`deepseek-v4-pro`, `kimi-k2.6`, `qwen3.6-plus`, `qwen3.7-max`,
-`mimo-v2.5-pro`) since 2026-05-22 (MiMo added 2026-05-28). If outputs start feeling flat or repetitive, bump back to
+This deployment runs `temperature: 0.5` across all six active models
+(`deepseek-v4-pro`, `kimi-k3`, `qwen3.7-plus`, `qwen3.7-max`, `qwen3.8-max`,
+`mimo-v2.6-pro`) since 2026-05-22 (MiMo added 2026-05-28; roster as of 2026-09-29 —
+`qwen3.6-plus` removed and MiMo moved to v2.6-pro that day). If outputs start feeling flat or repetitive, bump back to
 0.6-0.7 — there's no harm in iterating. The commented example blocks
 in `config.yaml` for disabled models (Gemini, Claude, vLLM templates)
 remain at the upstream 0.7 default as reference.
@@ -985,23 +986,23 @@ re-add it from this section.
 
 ### MiMo (Xiaomi) via `PatchedChatMiMo` adapter
 
-Xiaomi's MiMo reasoning model family (mimo-v2.5-pro, mimo-v2.5, mimo-v2-pro,
-mimo-v2-omni, mimo-v2-flash) returns `reasoning_content` in thinking mode and
+Xiaomi's MiMo reasoning model family (mimo-v2.6-pro / -flash / -pro-ultraspeed since
+2026-09; earlier mimo-v2.5-pro, mimo-v2.5, mimo-v2-pro, mimo-v2-omni, mimo-v2-flash) returns `reasoning_content` in thinking mode and
 **requires that field to be replayed on historical assistant messages** in
 multi-turn agent/tool-call conversations. Standard `langchain_openai.ChatOpenAI`
 drops the provider-specific field, causing HTTP 400 errors once tool calls
 enter the conversation history. Upstream provides a dedicated adapter:
 
 ```yaml
-- name: mimo-v2.5-pro
-  display_name: MiMo V2.5 Pro
+- name: mimo-v2.6-pro                      # v2.5-pro until 2026-09-29
+  display_name: MiMo V2.6 Pro
   use: deerflow.models.patched_mimo:PatchedChatMiMo
-  model: mimo-v2.5-pro
+  model: mimo-v2.6-pro                      # Xiaomi: 1M context, 128K max output, $0.435/$0.87 per M tokens
   api_key: $MIMO_API_KEY
   base_url: https://api.xiaomimimo.com/v1
   request_timeout: 600.0
   max_retries: 2
-  max_tokens: 8192
+  max_tokens: 32768                         # was 8192 — thinking tokens count against it (see "Tuning" #6)
   temperature: 0.5
   supports_thinking: true
   supports_vision: false
@@ -2030,6 +2031,26 @@ sg docker -c 'docker logs --since 5m deer-flow-gateway 2>&1 \
   Gateway log clean. `prompt.py` is upstream byte-for-byte (`git diff upstream/main -- prompt.py` empty): **no backend
   source file is carried any more.** Scripts persisted in `~/deer-flow-sync-backups/`: `probe_3b_inside.py`,
   `smoke_pw3_inside.py`, `smoke_embedded_inside.py`, `smoke_language_inside.py`.
+
+- **ADDENDUM 2026-09-29 02:35–02:45 UTC — MODEL ROSTER CHANGE (owner): `qwen3.6-plus` REMOVED, MiMo
+  `mimo-v2.5-pro` → `mimo-v2.6-pro` (`max_tokens` 8192 → 32768).** Pre-checks: nothing referenced qwen3.6-plus
+  live (title/summarization/memory/suggestions all `model_name: null` → default; pipelines mention it only in
+  historical comments; no cron/scheduled task; DB `runs.model_name` holds 21 historical rows on it + 4 on
+  mimo-v2.5-pro — records only; a stale browser selection falls back to the default model in `input-box.tsx`;
+  an explicit run request on a removed name → HTTP 400 "not in the configured model allowlist"). Xiaomi's API
+  lists `mimo-v2.6-pro` (+ `-flash`, `-pro-ultraspeed`; v2.5-pro still served); direct probes: `thinking.type`
+  toggle honoured, `reasoning_content` returned when enabled, `max_tokens` 32768/65536 accepted; Xiaomi's model
+  page: 1M context, 128K max output, $0.435 / $0.87 per M tokens (cache hit $0.0036). `PatchedChatMiMo` is
+  model-id agnostic. Candidate config validated on the live container (`from_file`; only `models` differs;
+  factory `create_chat_model('mimo-v2.6-pro')` thinking off/on → `MIMO_OK`, reasoning_content present when on).
+  Switch (owner ran it — classifier refuses my deploy calls): backup `~/deer-flow-sync-backups/20260929-0235-models/`
+  → `make down` → candidate in → `make up` (images cached, ~1 min). **3a** clean (startup complete, 0 tracebacks,
+  `0026 -> 0026`, :2026 + `/login` 200, extensions md5 `efba0945`). **3b** sentinel in sync; probe `ok: true`,
+  models = deepseek-v4-pro, kimi-k3, qwen3.7-plus, qwen3.7-max, qwen3.8-max, mimo-v2.6-pro. **3c** PW_STRONG PASS
+  first; NEW `smoke_models_inside.py` **MODELS_OK 4/4** (mimo-v2.6-pro thinking off + on → `MODEL_OK`;
+  `qwen3.6-plus` and `mimo-v2.5-pro` rejected); battery **ALL_OK 9/9** (sandbox `d429f9093e75` = daemon create
+  event; subagent `SUB=1337`). Gateway log clean. Gist: `config.yaml` copy refreshed (identical), models table +
+  rebuild step 5 updated. Persistent scripts now five: `+ smoke_models_inside.py`.
 
 ### 2026-09-22 sync — 46 commits, merge `226ac537` (`main`@`c9043c25`)
 - **Cleanest range in weeks: ZERO conflicts, NO migrations (head stays `0026_mcp_task_lease_tokens`),
