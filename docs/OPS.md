@@ -1248,6 +1248,10 @@ factually reference `bytedance/deer-flow`, and their nav entries are already rem
   more** — `git diff --name-only upstream/main...local-fixes` shows deployment config + the re-skin only.
   ⚠ DUPLICATE trap of the FOWNER kind: should upstream ever ship its own `<language>` block in the template, the
   rendered prompt would carry two — the probe's count=1 assertion is the tripwire.
+  **Restoring the block after a config.yaml loss:** the exact text is in git history —
+  `git show 9fd8b397:backend/packages/harness/deerflow/agents/lead_agent/prompt.py | grep -A2 '<language>'` — put it
+  under `lead_prompt_overlay:\n  append: |-` (4-space indented) at the end of `config.yaml`, then `make down && make up`
+  and re-run the 3b probe (`language_overlay_rendered_count: 1`). Backup copies: `~/deer-flow-sync-backups/*/config.yaml`.
 
 ### Absorbed upstream (no longer carried)
 - `--cap-add=FOWNER` in `community/aio_sandbox/local_backend.py` (`47fbb879`, 2026-08-28) — absorbed
