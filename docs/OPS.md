@@ -104,10 +104,16 @@ GIST=<gist id from the memory topic file>
 gh api gists/$GIST --method PATCH \
   -F "files[config.yaml][content]=@config.yaml" \
   -F "files[extensions_config.json][content]=@extensions_config.json" --jq '.updated_at'
-for f in config.yaml extensions_config.json; do
-  gh api gists/$GIST --jq ".files.\"$f\".content" | cmp -s - $f && echo "$f: gist copy identical" || echo "$f: DIFFERS — re-push"
+for f in config.yaml extensions_config.json; do   # the gist API appends ONE trailing newline — compare modulo that
+  gh api gists/$GIST --jq ".files.\"$f\".content" | python3 -c "import sys; g=sys.stdin.read().rstrip('\n'); l=open('$f').read().rstrip('\n'); print('$f:', 'gist copy identical' if g==l else 'DIFFERS — re-push')"
 done
 ```
+
+⚠ **Trailing-newline effect on a RESTORE:** the gist API stores each file with a final newline, so a file restored
+from the gist is byte-identical EXCEPT for that newline — the live `extensions_config.json` has none (md5 `efba0945`),
+the gist copy has one (md5 `c0e303f2`). Both fingerprints denote the same JSON; after a restore either strip it
+(`perl -pi -e 'chomp if eof' extensions_config.json` → `efba0945`) or accept `c0e303f2` as the equivalent. Verified
+2026-09-29 01:31 UTC: both copies identical modulo that newline.
 
 Recovery uses them in step 5b of the gist's rebuild procedure. Droplet-level backups (DigitalOcean control panel →
 Backups) are a separate, coarser safety net — check that they are on.
