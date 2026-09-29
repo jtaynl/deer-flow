@@ -88,6 +88,30 @@ pin to the source file's inode at container creation. Most editors
 creates a new inode. The container keeps seeing the old content until it's
 recreated.
 
+## Off-box copies of the instance files (gist)
+
+`config.yaml` and `extensions_config.json` are hand-maintained, gitignored, and until 2026-09-29 existed ONLY on the
+droplet (live file + `~/deer-flow-sync-backups/<ts>/`). Since 2026-09-29 the private ops gist (URL = a credential, see
+the memory topic file) holds VERBATIM copies as the gist files `config.yaml` and `extensions_config.json`. Both are
+secret-free by construction — every credential in `config.yaml` is a `$ENV` reference resolved from `.env`, and the
+extensions file carries only paths; `.env` itself lives ONLY in the password manager and must NEVER go into the gist.
+
+**Refresh the copies after ANY change to either file** (a sync that edits them, a `lead_prompt_overlay` edit, a model
+swap, an extensions toggle) — and verify by md5, never trust the PATCH response alone:
+
+```bash
+GIST=<gist id from the memory topic file>
+gh api gists/$GIST --method PATCH \
+  -F "files[config.yaml][content]=@config.yaml" \
+  -F "files[extensions_config.json][content]=@extensions_config.json" --jq '.updated_at'
+for f in config.yaml extensions_config.json; do
+  gh api gists/$GIST --jq ".files.\"$f\".content" | cmp -s - $f && echo "$f: gist copy identical" || echo "$f: DIFFERS — re-push"
+done
+```
+
+Recovery uses them in step 5b of the gist's rebuild procedure. Droplet-level backups (DigitalOcean control panel →
+Backups) are a separate, coarser safety net — check that they are on.
+
 ## Upstream sync workflow
 
 `local-fixes` is **merge-maintained** (50+ merge commits — it merges `upstream/main`
@@ -168,6 +192,9 @@ done
 
 # 4. Push (NO force — a merge appends; it never rewrites history).
 git push origin local-fixes
+
+# 4b. If the sync (or its follow-ups) changed config.yaml / extensions_config.json, refresh the gist copies
+#     ("Off-box copies of the instance files" above) and verify by md5.
 
 # 5. Keep the fork's main aligned (safe fast-forward only).
 git checkout main && git merge --ff-only upstream/main && git push origin main && git checkout local-fixes
