@@ -195,6 +195,11 @@ sg docker -c 'docker logs --since 3m deer-flow-gateway 2>&1 | grep -iE "error|tr
 for f in smoke_pw3_inside smoke_embedded_inside smoke_language_inside; do
   sg docker -c 'docker exec -i -w /app/backend -e PYTHONPATH=/app/backend deer-flow-gateway .venv/bin/python -' < ~/deer-flow-sync-backups/$f.py
 done
+#       (4) smoke_models_inside.py — ONLY after a change to the `models:` list: chats the changed model with thinking
+#           off + on and asserts the removed names are rejected; expect `{"summary": "MODELS_OK"}`. ⚠ It is
+#           roster-specific (names hard-coded: mimo-v2.6-pro live; qwen3.6-plus / mimo-v2.5-pro removed) — edit the
+#           names before the next roster change, then persist the edited copy.
+sg docker -c 'docker exec -i -w /app/backend -e PYTHONPATH=/app/backend deer-flow-gateway .venv/bin/python -' < ~/deer-flow-sync-backups/smoke_models_inside.py
 
 # 4. Push (NO force — a merge appends; it never rewrites history).
 git push origin local-fixes
@@ -880,6 +885,10 @@ If a future DeerFlow update teaches `ClaudeChatModel` to emit the new
 and Claude will steer reasoning depth from the UI again.
 
 ### Qwen via Alibaba DashScope (OpenAI-compatible)
+
+> **Recipe reference.** The blocks below use `qwen3.6-plus` as the worked example; the block SHAPE is what matters. As of
+> 2026-09-29 the live roster carries `qwen3.7-plus` / `qwen3.7-max` / `qwen3.8-max` (all on the Bailian token-plan) and
+> `qwen3.6-plus` is removed — see the gist's models table and the verbatim `config.yaml` copy there for the live entries.
 
 DashScope's `compatible-mode/v1` endpoint accepts standard OpenAI-style
 requests, so plain `langchain_openai:ChatOpenAI` with a custom `base_url`
