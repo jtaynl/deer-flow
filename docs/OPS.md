@@ -88,6 +88,17 @@ pin to the source file's inode at container creation. Most editors
 creates a new inode. The container keeps seeing the old content until it's
 recreated.
 
+## Instance config change — 2026-10-01 16:56 UTC: `deepseek-v4-pro` `max_tokens` 32768 → 65536
+
+Owner-approved and owner-run (the classifier refuses config edits from the session). Why: the PMI contract/3 pilot (one research turn,
+thinking on) showed DeepSeek's reasoning sharing the output cap with the answer — final-turn reasoning 27.7–32.8K tokens of 32,768 —
+so replies were cut or replaced by the length-cap notice. How: `cp -p` backup to `~/deer-flow-sync-backups/config.yaml.pre-maxtokens-20261001`,
+then an in-place `r+` rewrite of the single line that PRESERVES THE INODE (536614 before and after) — the bind mount keeps seeing the file
+and `get_app_config` hot-reloads on mtime, so NO recreate/restart was needed (the table above applies to write-and-rename editors).
+Verified by instantiation inside the gateway at 16:57:25 UTC: config entry 65536; `create_chat_model("deepseek-v4-pro", thinking_enabled=True).max_tokens`
+= 65536 (PatchedChatDeepSeek). Gist copies refreshed 16:58:13 UTC and verified identical (config.yaml md5 `578cd7a360347cb3dfd224651ad76750`;
+extensions unchanged `efba0945`). The ceiling 65536 is DeepSeek's maximum (131072 rejected — see the model-roster entry).
+
 ## Off-box copies of the instance files (gist)
 
 `config.yaml` and `extensions_config.json` are hand-maintained, gitignored, and until 2026-09-29 existed ONLY on the
