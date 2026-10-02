@@ -107,6 +107,65 @@ pilot threads of 1 Oct the agent's `web_fetch` failed 9 of 190 calls, 8 of them 
 value as `X-Timeout`; Jina allows up to 180). The rest of the plan: upstream sync (two-step), then ONE additive chained `web_fetch` module (Jina →
 Firecrawl → Tavily extract; `FIRECRAWL_API_KEY` in `.env`, never the gist), prompt lines in the PMI and LGI research prompts; ScrapingBee stays host-side.
 
+## WRI chained `web_fetch` (fork-owned, additive)
+
+**What.** `backend/packages/harness/deerflow/community/wri_chained_fetch/` (`tools.py`; tests `backend/tests/test_wri_chained_fetch.py`,
+58 cases, fakes only — no network) — item 3 of the 2 Oct fetch plan. A `web_fetch` tool with the SAME model-visible name, docstring and
+argument schema as the stock Jina tool (pinned by a test), running the ladder **Jina → Firecrawl → Tavily extract**: the Jina rung IS the
+Jina tool (same `JinaClient.crawl` html request, same readability extraction off the event loop, same `# <title>` + markdown document,
+same 4096 cap); whenever a rung does not yield content — transport error, Jina's own 200 error shell (`Warning: Target URL returned error
+<NNN>`), a challenge page (Cloudflare "Just a moment" / "Attention Required", "Enable JavaScript and cookies", Akamai "Access Denied",
+CloudFront "Request blocked", a captcha… — short texts only, so a long article mentioning "access denied" is never rejected), a THIN page
+(under `min_content_chars` of extracted text — typically the nav shell of a JS-rendered page), a timeout — the next rung is tried, and the
+first rung that clears both gates wins. Exhausted → ONE `Error: web_fetch ladder exhausted — jina: <reason>; firecrawl: <reason>; tavily:
+<reason>` string (the model sees it; the fetch plan's prompt lines send it to the browser tools next; a thin page at every rung is an
+error, not a shell handed to the model as content — the pmi rule). Every rung's outcome is one INFO line
+`web_fetch ladder: tier=<t> outcome=<ok|fail> reason=<r> url=<url without query string>` — never the content, never a key (reasons are
+redacted against every key the ladder knows). The Firecrawl rung closes the per-call client's pooled async HTTP client after every call
+(upstream fix #6013 / `5312271f`, not yet in `local-fixes`, mirrored locally; best-effort, never masks the result). Worst-case wall clock
+= `timeout` × enabled rungs (3 × 120 s with the current instance timeout).
+
+**Switch** (`config.yaml`, the `web_fetch` entry under `tools:`; every key but `use:` optional, defaults shown; the inode-preserving
+in-place edit of 1–2 Oct applies, then verify by the smoke below — if the new `use:` is not picked up by hot-reload, recreate per the
+table above). Rollback = `use:` back to `deerflow.community.jina_ai.tools:web_fetch_tool` (the package stays inert):
+
+```yaml
+  - name: web_fetch
+    group: web
+    use: deerflow.community.wri_chained_fetch.tools:web_fetch_tool
+    timeout: 60               # seconds: Jina X-Timeout + httpx timeout; ALSO bounds each fallback rung (instance: 120)
+    proxy: null               # forwarded to the Jina httpx client, exactly as the Jina tool does
+    trust_env: true           # idem
+    min_content_chars: 500    # content floor on the extracted text (title line excluded); 0 disables
+    max_chars: 4096           # output cap — the stock tools' cap
+    tiers: [jina, firecrawl, tavily]   # the ladder in order; drop a name to disable that rung
+    firecrawl_api_key: null   # optional; otherwise the SDK reads FIRECRAWL_API_KEY from the environment
+    firecrawl_base_url: null  # optional self-hosted Firecrawl
+    tavily_api_key: null      # optional; otherwise the SDK reads TAVILY_API_KEY from the environment
+```
+
+**Env keys (names only; they live in `.env` — never the gist):** `JINA_API_KEY` (optional — higher Jina rate limit),
+`FIRECRAWL_API_KEY` (new for this plan), `TAVILY_API_KEY` (the Tavily rung; the same key the Tavily `web_search` provider reads). Without a
+key the rung is SKIPPED (logged `reason=skipped (FIRECRAWL_API_KEY not set …)`) and the ladder continues — a missing key alone never fails the tool.
+
+**Fork-owned path.** Upstream never writes `deerflow/community/wri_chained_fetch/`, so syncs cannot conflict on it; the stock
+`jina_ai` / `firecrawl` / `tavily` modules are untouched (the ladder imports `JinaClient` and `ReadabilityExtractor` from upstream code and
+builds its own Firecrawl/Tavily clients). Hatchling packages the whole `deerflow` tree, so the rebuild ships it with no Dockerfile change.
+Not in `backend/docs/CONFIGURATION.md` (upstream-owned) by design — this section is the documentation.
+
+**Smoke after a rebuild** (inside the gateway; one shell command — the `\`-newlines are shell continuations, paste as is). Expect: the
+Wikipedia page → `tier=jina outcome=ok` and ~4096 chars; singstat → `tier=jina outcome=fail reason=challenge/error shell (…)` or a Jina
+403, then a later rung (or the exhausted error) — never a 200 shell as content; `httpbin …/403` → the exhausted error naming all three
+reasons (with `FIRECRAWL_API_KEY` absent its reason reads `skipped (FIRECRAWL_API_KEY not set …)`). The same snippet is in the package
+docstring (`tools.py`):
+
+```bash
+sg docker -c "docker exec -w /app/backend -e PYTHONPATH=/app/backend deer-flow-gateway .venv/bin/python -c \"import asyncio, logging; \
+  logging.basicConfig(level=logging.INFO, force=True); from deerflow.community.wri_chained_fetch.tools import web_fetch_tool as t; \
+  [print(u, '->', len(r), 'chars:', r[:120].replace(chr(10), ' ')) for u in ('https://en.wikipedia.org/wiki/Supply_chain', \
+  'https://www.singstat.gov.sg/', 'https://httpbin.org/status/403') for r in (asyncio.run(t.ainvoke({'url': u})),)]\""
+```
+
 ## Off-box copies of the instance files (gist)
 
 `config.yaml` and `extensions_config.json` are hand-maintained, gitignored, and until 2026-09-29 existed ONLY on the
