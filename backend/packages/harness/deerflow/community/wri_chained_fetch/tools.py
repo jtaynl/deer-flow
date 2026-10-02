@@ -37,8 +37,9 @@ Jina rung is the Jina tool itself (same ``JinaClient.crawl`` call — ``return_f
 ``proxy``, ``trust_env`` — same ``ReadabilityExtractor`` off the event loop via ``asyncio.to_thread``, same
 ``# <title>\n\n<markdown>`` document capped at ``max_chars``), so with ``tiers: [jina]`` a successful
 fetch is byte-identical to the Jina tool's. The Firecrawl rung closes the per-call client's pooled async
-HTTP client after every call (upstream fix #6013, ``5312271f``, mirrored here because it is not yet in
-``local-fixes``); teardown is best-effort and never masks the rung's own result.
+HTTP client after every call (upstream fix #6013, ``5312271f`` — in ``local-fixes`` since the 2 Oct 2026 sync;
+mirrored here rather than imported, so this module never depends on the stock tool's private helper);
+teardown is best-effort and never masks the rung's own result.
 
 ``config.yaml`` stanza (every key optional; defaults shown; ``$VAR`` references resolve from ``.env``)::
 

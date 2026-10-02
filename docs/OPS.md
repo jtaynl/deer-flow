@@ -110,20 +110,27 @@ Firecrawl → Tavily extract; `FIRECRAWL_API_KEY` in `.env`, never the gist), pr
 ## WRI chained `web_fetch` (fork-owned, additive)
 
 **What.** `backend/packages/harness/deerflow/community/wri_chained_fetch/` (`tools.py`; tests `backend/tests/test_wri_chained_fetch.py`,
-58 cases, fakes only — no network) — item 3 of the 2 Oct fetch plan. A `web_fetch` tool with the SAME model-visible name, docstring and
+86 cases, fakes only — no network) — item 3 of the 2 Oct fetch plan. A `web_fetch` tool with the SAME model-visible name, docstring and
 argument schema as the stock Jina tool (pinned by a test), running the ladder **Jina → Firecrawl → Tavily extract**: the Jina rung IS the
 Jina tool (same `JinaClient.crawl` html request, same readability extraction off the event loop, same `# <title>` + markdown document,
 same 4096 cap); whenever a rung does not yield content — transport error, Jina's own 200 error shell (`Warning: Target URL returned error
 <NNN>`), a challenge page (Cloudflare "Just a moment" / "Attention Required", "Enable JavaScript and cookies", Akamai "Access Denied",
-CloudFront "Request blocked", a captcha… — short texts only, so a long article mentioning "access denied" is never rejected), a THIN page
-(under `min_content_chars` of extracted text — typically the nav shell of a JS-rendered page), a timeout — the next rung is tried, and the
-first rung that clears both gates wins. Exhausted → ONE `Error: web_fetch ladder exhausted — jina: <reason>; firecrawl: <reason>; tavily:
-<reason>` string (the model sees it; the fetch plan's prompt lines send it to the browser tools next; a thin page at every rung is an
-error, not a shell handed to the model as content — the pmi rule). Every rung's outcome is one INFO line
-`web_fetch ladder: tier=<t> outcome=<ok|fail> reason=<r> url=<url without query string>` — never the content, never a key (reasons are
-redacted against every key the ladder knows). The Firecrawl rung closes the per-call client's pooled async HTTP client after every call
-(upstream fix #6013 / `5312271f`, not yet in `local-fixes`, mirrored locally; best-effort, never masks the result). Worst-case wall clock
-= `timeout` × enabled rungs (3 × 120 s with the current instance timeout).
+CloudFront "Request blocked", a captcha… — short texts only, so a long article mentioning "access denied" is never rejected), a 4xx/5xx
+the target itself returned (Firecrawl reports it as `metadata.status_code`; a branded 404/403 page is never content, however long), a THIN
+page (under `min_content_chars` of extracted text — typically the nav shell of a JS-rendered page), a timeout — the next rung is tried,
+and the first rung that clears both gates wins. Exhausted → ONE `Error: web_fetch ladder exhausted — jina: <reason>; firecrawl: <reason>;
+tavily: <reason>` string (the model sees it; the fetch plan's prompt lines send it to the browser tools next). ONE exception, `thin_policy`
+(2 Oct review, option b): when EVERY attempted rung fails on the content floor alone — no shell, error or timeout anywhere; skipped (no key)
+and disabled rungs do not count — the page is most likely just short, and the default `thin_policy: longest` returns the longest of those
+thin pages (logged `outcome=thin`); `thin_policy: error` keeps the strict pmi rule (a thin page at every rung is an error and the browser
+is next). Every rung's outcome is one INFO line
+`web_fetch ladder: tier=<t> outcome=<ok|fail|thin> reason=<r> url=<url without query string>` — never the content, never a key (reasons
+are redacted against every key the ladder knows, stripped and raw). The Firecrawl rung closes the per-call client's pooled async HTTP
+client after every call (upstream fix #6013 / `5312271f` — in `local-fixes` since the 2 Oct sync; mirrored locally rather than imported, so
+the module never depends on the stock tool's private helper; best-effort, never masks the result).
+Worst-case wall clock = `timeout` (Jina) + `fallback_timeout` (Firecrawl) + min(`fallback_timeout`, 30) (Tavily — its SDK caps `extract`
+at 30 s itself): ~270 s with the instance's `timeout: 120` and no `fallback_timeout`, ~210 s with the `fallback_timeout: 60` of the stanza
+below. Nothing in the harness cuts a tool call short, so set `fallback_timeout` deliberately rather than letting the Jina budget propagate.
 
 **Switch** (`config.yaml`, the `web_fetch` entry under `tools:`; every key but `use:` optional, defaults shown; the inode-preserving
 in-place edit of 1–2 Oct applies, then verify by the smoke below — if the new `use:` is not picked up by hot-reload, recreate per the
@@ -133,10 +140,12 @@ table above). Rollback = `use:` back to `deerflow.community.jina_ai.tools:web_fe
   - name: web_fetch
     group: web
     use: deerflow.community.wri_chained_fetch.tools:web_fetch_tool
-    timeout: 60               # seconds: Jina X-Timeout + httpx timeout; ALSO bounds each fallback rung (instance: 120)
+    timeout: 60               # seconds: Jina X-Timeout + httpx timeout — the Jina rung only (instance: 120)
+    fallback_timeout: 60      # seconds: bounds EACH fallback rung (Firecrawl, Tavily); default = timeout — set it, or the Jina budget propagates
     proxy: null               # forwarded to the Jina httpx client, exactly as the Jina tool does
     trust_env: true           # idem
     min_content_chars: 500    # content floor on the extracted text (title line excluded); 0 disables
+    thin_policy: longest      # every attempted rung thin and nothing else wrong: return the longest thin page; "error" = the exhausted error
     max_chars: 4096           # output cap — the stock tools' cap
     tiers: [jina, firecrawl, tavily]   # the ladder in order; drop a name to disable that rung
     firecrawl_api_key: null   # optional; otherwise the SDK reads FIRECRAWL_API_KEY from the environment
@@ -154,10 +163,11 @@ builds its own Firecrawl/Tavily clients). Hatchling packages the whole `deerflow
 Not in `backend/docs/CONFIGURATION.md` (upstream-owned) by design — this section is the documentation.
 
 **Smoke after a rebuild** (inside the gateway; one shell command — the `\`-newlines are shell continuations, paste as is). Expect: the
-Wikipedia page → `tier=jina outcome=ok` and ~4096 chars; singstat → `tier=jina outcome=fail reason=challenge/error shell (…)` or a Jina
-403, then a later rung (or the exhausted error) — never a 200 shell as content; `httpbin …/403` → the exhausted error naming all three
-reasons (with `FIRECRAWL_API_KEY` absent its reason reads `skipped (FIRECRAWL_API_KEY not set …)`). The same snippet is in the package
-docstring (`tools.py`):
+Wikipedia page → `tier=jina outcome=ok` and ~4096 chars; singstat → `tier=jina outcome=fail` (reason: a `challenge/error shell (…)`, a
+Jina `target returned 403` shell, or `thin content` when readability strips the challenge page down to a few words), then a later rung (or
+the exhausted error) — never a 200 shell as content; `httpbin …/403` → the exhausted error naming all three reasons (with
+`FIRECRAWL_API_KEY` absent its reason reads `skipped (FIRECRAWL_API_KEY not set …)`; a 403 is a shell / `target returned 403` at every
+rung, so the thin return cannot apply). The same snippet is in the package docstring (`tools.py`):
 
 ```bash
 sg docker -c "docker exec -w /app/backend -e PYTHONPATH=/app/backend deer-flow-gateway .venv/bin/python -c \"import asyncio, logging; \
