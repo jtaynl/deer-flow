@@ -99,6 +99,14 @@ Verified by instantiation inside the gateway at 16:57:25 UTC: config entry 65536
 = 65536 (PatchedChatDeepSeek). Gist copies refreshed 16:58:13 UTC and verified identical (config.yaml md5 `578cd7a360347cb3dfd224651ad76750`;
 extensions unchanged `efba0945`). The ceiling 65536 is DeepSeek's maximum (131072 rejected — see the model-roster entry).
 
+## Instance config change — 2026-10-02 05:33 UTC: `web_fetch` tool `timeout` 60 → 120
+
+Owner-approved (item 1 of the 2 Oct fetch plan) and owner-run with the same inode-preserving in-place edit as the 1 Oct change (inode 536614
+unchanged; config.yaml md5 now `63227485caa2a727d207eec2bf36c62d`; gist copy refreshed 05:35:48 UTC and verified identical). Why: across the 41 PMI
+pilot threads of 1 Oct the agent's `web_fetch` failed 9 of 190 calls, 8 of them Jina ReadTimeouts at the 60 s limit (the Jina client passes the
+value as `X-Timeout`; Jina allows up to 180). The rest of the plan: upstream sync (two-step), then ONE additive chained `web_fetch` module (Jina →
+Firecrawl → Tavily extract; `FIRECRAWL_API_KEY` in `.env`, never the gist), prompt lines in the PMI and LGI research prompts; ScrapingBee stays host-side.
+
 ## Off-box copies of the instance files (gist)
 
 `config.yaml` and `extensions_config.json` are hand-maintained, gitignored, and until 2026-09-29 existed ONLY on the
