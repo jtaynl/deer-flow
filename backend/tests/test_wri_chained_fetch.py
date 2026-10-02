@@ -102,7 +102,7 @@ def extractor(monkeypatch):
 
 
 class FakeFirecrawl:
-    def __init__(self, *, markdown: str = LONG_TEXT, title: str | None = "Fetched Page", error: Exception | None = None, slow: float = 0.0):
+    def __init__(self, *, markdown: str = LONG_TEXT, title: str | None = "Fetched Page", status_code: int | None = None, error: Exception | None = None, slow: float = 0.0):
         self.calls: list[tuple[str, dict]] = []
         self.close = AsyncMock()
         self._v2_client = SimpleNamespace(async_http_client=SimpleNamespace(close=self.close))
@@ -113,7 +113,7 @@ class FakeFirecrawl:
                 await asyncio.sleep(slow)
             if error is not None:
                 raise error
-            return SimpleNamespace(markdown=markdown, metadata=SimpleNamespace(title=title))
+            return SimpleNamespace(markdown=markdown, metadata=SimpleNamespace(title=title, status_code=status_code))
 
         self.scrape = scrape
 
@@ -179,7 +179,9 @@ def test_tool_config_schema_allows_the_ladder_keys():
         group="web",
         use="deerflow.community.wri_chained_fetch.tools:web_fetch_tool",
         timeout=120,
+        fallback_timeout=60,
         min_content_chars=400,
+        thin_policy="error",
         max_chars=8192,
         tiers=["jina", "firecrawl"],
         firecrawl_api_key="x",
@@ -187,7 +189,9 @@ def test_tool_config_schema_allows_the_ladder_keys():
     )
     assert config.model_extra == {
         "timeout": 120,
+        "fallback_timeout": 60,
         "min_content_chars": 400,
+        "thin_policy": "error",
         "max_chars": 8192,
         "tiers": ["jina", "firecrawl"],
         "firecrawl_api_key": "x",
@@ -299,6 +303,12 @@ async def test_jina_exception_is_a_rung_failure_not_a_tool_crash(ladder):
         pytest.param(html_page("Please complete the captcha below to continue.", title="Security check"), "challenge/error shell ('captcha')", id="captcha"),
         pytest.param(html_page("nginx", title="403 Forbidden"), "challenge/error shell ('403 forbidden')", id="bare-403"),
         pytest.param(html_page("Performance & security by Cloudflare", title="Ray ID"), "challenge/error shell ('cloudflare')", id="cloudflare-tiny-body"),
+        pytest.param(
+            html_page("www.singstat.gov.sg needs to review the security of your connection before proceeding.", title="www.singstat.gov.sg"),
+            "challenge/error shell ('review the security of your connection')",
+            id="cloudflare-body-without-title",
+        ),
+        pytest.param(html_page("Verifying you are human. This may take a few seconds.", title="www.singstat.gov.sg"), "challenge/error shell ('you are human')", id="turnstile"),
         pytest.param("Title: ERROR: Forbidden\n\nURL Source: https://example.com/report\n\nWarning: Target URL returned error 403: Forbidden\n", "jina error shell (target returned 403)", id="jina-200-error-shell"),
         pytest.param("Title: ERROR: upstream failed\n\nMarkdown Content:\n", "jina error shell (Title: ERROR)", id="jina-title-error-shell"),
     ],
@@ -429,6 +439,104 @@ async def test_firecrawl_untitled_when_metadata_has_no_title(ladder):
     assert result == f"# Untitled\n\n{LONG_TEXT}"
 
 
+@pytest.mark.parametrize("status", [403, 404, 429, 500])
+@pytest.mark.anyio
+async def test_firecrawl_4xx_5xx_target_is_never_content_however_long(ladder, caplog, status):
+    """firecrawl-py reports the target's own status in ``metadata.status_code``; a branded error page is long
+    enough to clear both text gates, so the status is the gate (review finding 2)."""
+    ladder.jina.response = JINA_READ_TIMEOUT
+    ladder.firecrawl.client = FakeFirecrawl(markdown="Sorry, the page you are looking for cannot be found. " + VERY_LONG_TEXT, title="Page not found", status_code=status)
+
+    with caplog.at_level(logging.INFO, logger=LOGGER):
+        result = await fetch()
+
+    assert result == f"# Tavily Page\n\n{LONG_TEXT}"
+    assert f"tier=firecrawl outcome=fail reason=target returned {status} url=" in caplog.text
+    ladder.firecrawl.client.close.assert_awaited_once()
+
+
+@pytest.mark.parametrize("status", [None, 200, 304, True], ids=["absent", "200", "304", "bool-is-not-a-status"])
+@pytest.mark.anyio
+async def test_firecrawl_status_below_400_or_absent_is_content(ladder, status):
+    ladder.jina.response = JINA_READ_TIMEOUT
+    ladder.firecrawl.client = FakeFirecrawl(status_code=status)
+
+    result = await fetch()
+
+    assert result == f"# Fetched Page\n\n{LONG_TEXT}"
+
+
+@pytest.mark.anyio
+async def test_firecrawl_sdk_document_carries_the_target_status(ladder, caplog):
+    """The locked firecrawl-py maps the API's ``statusCode`` onto ``Document.metadata.status_code`` (no network)."""
+    from firecrawl.v2.types import Document
+    from firecrawl.v2.utils.normalize import normalize_document_input
+
+    document = Document(**normalize_document_input({"markdown": VERY_LONG_TEXT, "metadata": {"title": "Page not found", "statusCode": 404, "sourceURL": URL}}))
+    assert document.metadata is not None and document.metadata.status_code == 404
+    ladder.jina.response = JINA_READ_TIMEOUT
+
+    async def scrape(url, **kwargs):
+        return document
+
+    ladder.firecrawl.client.scrape = scrape
+
+    with caplog.at_level(logging.INFO, logger=LOGGER):
+        result = await fetch()
+
+    assert result == f"# Tavily Page\n\n{LONG_TEXT}"
+    assert "tier=firecrawl outcome=fail reason=target returned 404 url=" in caplog.text
+
+
+@pytest.mark.anyio
+async def test_fallback_timeout_bounds_the_fallback_rungs_but_not_jina(ladder, caplog):
+    """``fallback_timeout`` decouples Firecrawl/Tavily from the Jina budget (review finding 5)."""
+    ladder.configure(timeout=20, fallback_timeout=1)
+    ladder.jina.response = JINA_READ_TIMEOUT
+    ladder.firecrawl.client = FakeFirecrawl(slow=5)
+
+    async def slow_extract(urls):
+        await asyncio.sleep(5)
+        return tavily_ok()
+
+    ladder.tavily.client.extract = slow_extract
+
+    with caplog.at_level(logging.INFO, logger=LOGGER):
+        result = await fetch()
+
+    assert ladder.jina.calls[0]["timeout"] == 20
+    assert result == EXHAUSTED_PREFIX + "jina: Request to Jina API failed: ReadTimeout: The read operation timed out; firecrawl: timed out after 1s; tavily: timed out after 1s"
+    assert "tier=firecrawl outcome=fail reason=timed out after 1s" in caplog.text
+    assert "tier=tavily outcome=fail reason=timed out after 1s" in caplog.text
+    ladder.firecrawl.client.close.assert_awaited_once()
+    ladder.tavily.client.close.assert_awaited_once()
+
+
+def test_fallback_timeout_defaults_to_timeout(configure):
+    configure(timeout=120)
+    assert chained._load_config().fallback_timeout == 120
+
+    configure(timeout=120, fallback_timeout=60)
+    assert chained._load_config().fallback_timeout == 60
+
+    configure(timeout=120, fallback_timeout="later")
+    assert chained._load_config().fallback_timeout == 120
+
+
+@pytest.mark.anyio
+async def test_the_tavily_sdk_timeout_is_a_reason_of_its_own(ladder):
+    """tavily-python caps ``extract`` at 30 s itself and raises its own (non-builtin) TimeoutError."""
+    from tavily.errors import TimeoutError as TavilyTimeoutError
+
+    ladder.configure(tiers=["tavily"], fallback_timeout=60)
+    ladder.tavily.client = FakeTavily(error=TavilyTimeoutError(30))
+
+    result = await fetch()
+
+    assert result == EXHAUSTED_PREFIX + "tavily: TimeoutError: Request timed out after 30 seconds.; jina: disabled; firecrawl: disabled"
+    ladder.tavily.client.close.assert_awaited_once()
+
+
 class TestFirecrawlTeardown:
     """Mirror of upstream #6013 (``5312271f``): best-effort, never raises, tolerates other SDK shapes."""
 
@@ -517,7 +625,7 @@ async def test_tavily_key_from_the_tool_config(ladder, monkeypatch):
 )
 @pytest.mark.anyio
 async def test_tavily_failures_are_reasons(ladder, caplog, response, reason):
-    ladder.configure(tiers=["tavily"])
+    ladder.configure(tiers=["tavily"], thin_policy="error")
     ladder.tavily.client = FakeTavily(response=response)
 
     with caplog.at_level(logging.INFO, logger=LOGGER):
@@ -587,17 +695,108 @@ async def test_exhausted_names_all_three_reasons(ladder, caplog):
     ladder.tavily.client.close.assert_awaited_once()
 
 
+# ---------------------------------------------------------------------------
+# thin_policy — every attempted rung thin, nothing else wrong
+# ---------------------------------------------------------------------------
+
+THIN_JINA = "Home | About | Contact"
+THIN_FIRECRAWL = "Release calendar — the Q3 bulletin moves to 14 October; the Q4 bulletin date is unchanged. Enquiries: the statistics desk."
+THIN_TAVILY = "Release calendar: the Q3 bulletin moves to 14 October."
+
+
 @pytest.mark.anyio
-async def test_every_rung_thin_is_exhausted_not_a_shell_as_content(ladder):
-    """A thin page at every rung is a JS shell far more often than a short article (the pmi rule): the browser is next."""
-    ladder.jina.response = html_page("Home | About | Contact")
-    ladder.firecrawl.client = FakeFirecrawl(markdown="Home | About | Contact")
-    ladder.tavily.client = FakeTavily(response=tavily_ok("Home | About | Contact"))
+async def test_every_attempted_rung_thin_returns_the_longest_thin_page(ladder, caplog):
+    """Three readers agree the page is short and none saw a shell, an error or a timeout: a short page, not a shell
+    (review finding 3, option b) — the longest wins, the ladder is logged as usual plus one ``outcome=thin`` line."""
+    ladder.jina.response = html_page(THIN_JINA)
+    ladder.firecrawl.client = FakeFirecrawl(markdown=THIN_FIRECRAWL)
+    ladder.tavily.client = FakeTavily(response=tavily_ok(THIN_TAVILY))
+
+    with caplog.at_level(logging.INFO, logger=LOGGER):
+        result = await fetch()
+
+    assert result == f"# Fetched Page\n\n{THIN_FIRECRAWL}"
+    assert caplog.text.count("outcome=fail reason=thin content (") == 3
+    assert f"tier=firecrawl outcome=thin reason=every attempted rung thin; returning the longest ({len(THIN_FIRECRAWL)} chars) url=https://example.com/report" in caplog.text
+    assert "ladder exhausted" not in caplog.text
+    assert SENTENCE.strip() not in caplog.text and THIN_FIRECRAWL not in caplog.text
+    ladder.firecrawl.client.close.assert_awaited_once()
+    ladder.tavily.client.close.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_thin_policy_error_keeps_the_exhausted_error(ladder):
+    """``thin_policy: error`` restores the strict rule — a thin page at every rung is an error and the browser is next."""
+    ladder.configure(thin_policy="error")
+    ladder.jina.response = html_page(THIN_JINA)
+    ladder.firecrawl.client = FakeFirecrawl(markdown=THIN_FIRECRAWL)
+    ladder.tavily.client = FakeTavily(response=tavily_ok(THIN_TAVILY))
 
     result = await fetch()
 
     assert result.startswith(EXHAUSTED_PREFIX)
     assert result.count("thin content (") == 3
+
+
+@pytest.mark.parametrize(
+    ("jina_response", "make_firecrawl", "blocking_reason"),
+    [
+        pytest.param(html_page(THIN_JINA), lambda: FakeFirecrawl(markdown="Enable JavaScript and cookies to continue", title="Just a moment..."), "firecrawl: challenge/error shell ('just a moment')", id="shell-at-one-rung"),
+        pytest.param(JINA_READ_TIMEOUT, lambda: FakeFirecrawl(markdown=THIN_FIRECRAWL), "jina: Request to Jina API failed: ReadTimeout", id="transport-error-at-one-rung"),
+        pytest.param(html_page(THIN_JINA), lambda: FakeFirecrawl(markdown=VERY_LONG_TEXT, status_code=404), "firecrawl: target returned 404", id="4xx-at-one-rung"),
+        pytest.param(html_page(THIN_JINA), lambda: FakeFirecrawl(error=RuntimeError("scrape failed")), "firecrawl: RuntimeError: scrape failed", id="exception-at-one-rung"),
+    ],
+)
+@pytest.mark.anyio
+async def test_a_shell_or_error_at_any_attempted_rung_keeps_the_exhausted_error(ladder, jina_response, make_firecrawl, blocking_reason):
+    ladder.jina.response = jina_response
+    ladder.firecrawl.client = make_firecrawl()
+    ladder.tavily.client = FakeTavily(response=tavily_ok(THIN_TAVILY))
+
+    result = await fetch()
+
+    assert result.startswith(EXHAUSTED_PREFIX)
+    assert blocking_reason in result
+    assert "tavily: thin content (" in result
+
+
+@pytest.mark.anyio
+async def test_skipped_and_disabled_rungs_do_not_block_the_thin_return(ladder, monkeypatch):
+    monkeypatch.delenv("FIRECRAWL_API_KEY")
+    ladder.configure(tiers=["jina", "firecrawl"])
+    ladder.jina.response = html_page(THIN_JINA)
+
+    result = await fetch()
+
+    assert result == expected_document(THIN_JINA)
+    assert ladder.firecrawl.factory_calls == []
+    assert ladder.tavily.factory_calls == []
+
+
+@pytest.mark.anyio
+async def test_the_thin_return_is_capped_by_max_chars(ladder):
+    ladder.configure(max_chars=24)
+    ladder.jina.response = html_page(THIN_JINA)
+    ladder.firecrawl.client = FakeFirecrawl(markdown=THIN_FIRECRAWL)
+    ladder.tavily.client = FakeTavily(response=tavily_ok(THIN_TAVILY))
+
+    result = await fetch()
+
+    assert result == f"# Fetched Page\n\n{THIN_FIRECRAWL}"[:24]
+
+
+@pytest.mark.anyio
+async def test_an_unknown_thin_policy_falls_back_to_longest(ladder, caplog):
+    ladder.configure(thin_policy="maybe")
+    ladder.jina.response = html_page(THIN_JINA)
+    ladder.firecrawl.client = FakeFirecrawl(markdown=THIN_FIRECRAWL)
+    ladder.tavily.client = FakeTavily(response=tavily_ok(THIN_TAVILY))
+
+    with caplog.at_level(logging.WARNING, logger=LOGGER):
+        result = await fetch()
+
+    assert result == f"# Fetched Page\n\n{THIN_FIRECRAWL}"
+    assert "ignoring unknown 'thin_policy' config 'maybe'; using 'longest'" in caplog.text
 
 
 @pytest.mark.anyio
@@ -677,7 +876,7 @@ async def test_min_content_chars_is_configurable_and_zero_disables_the_floor(lad
 
 @pytest.mark.anyio
 async def test_invalid_config_values_fall_back_to_defaults(ladder):
-    ladder.configure(timeout="soon", min_content_chars=-5, max_chars=0, trust_env="maybe")
+    ladder.configure(timeout="soon", fallback_timeout="later", min_content_chars=-5, thin_policy=42, max_chars=0, trust_env="maybe")
 
     await fetch()
 
@@ -724,6 +923,36 @@ async def test_a_key_echoed_by_an_sdk_error_is_redacted_from_the_result_and_the_
         assert secret not in caplog.text
 
 
+@pytest.mark.parametrize("decorate", [lambda key: key + "\n", lambda key: f"  {key}  ", lambda key: key + "\r\n"], ids=["trailing-newline", "padded", "crlf"])
+@pytest.mark.anyio
+async def test_a_key_with_whitespace_around_it_in_the_env_is_still_redacted(ladder, caplog, monkeypatch, decorate):
+    """The rungs hand the SDKs the STRIPPED env value, so an echoed key comes back bare; the redaction must know
+    that form too (review finding 1)."""
+    monkeypatch.setenv("FIRECRAWL_API_KEY", decorate(FIRECRAWL_KEY))
+    monkeypatch.setenv("TAVILY_API_KEY", decorate(TAVILY_KEY))
+    ladder.jina.response = JINA_READ_TIMEOUT
+    ladder.firecrawl.client = FakeFirecrawl(error=RuntimeError(f"401 Unauthorized for key {FIRECRAWL_KEY}"))
+    ladder.tavily.client = FakeTavily(error=RuntimeError(f"401 Unauthorized for key {TAVILY_KEY}"))
+
+    with caplog.at_level(logging.INFO, logger=LOGGER):
+        result = await fetch()
+
+    assert ladder.firecrawl.factory_calls == [{"api_key": FIRECRAWL_KEY, "api_url": None}]
+    assert ladder.tavily.factory_calls == [{"api_key": TAVILY_KEY}]
+    assert result == EXHAUSTED_PREFIX + "jina: Request to Jina API failed: ReadTimeout: The read operation timed out; firecrawl: RuntimeError: 401 Unauthorized for key ***; tavily: RuntimeError: 401 Unauthorized for key ***"
+    assert FIRECRAWL_KEY not in caplog.text
+    assert TAVILY_KEY not in caplog.text
+
+
+def test_known_secrets_registers_the_stripped_and_the_raw_form(monkeypatch):
+    monkeypatch.setenv("FIRECRAWL_API_KEY", FIRECRAWL_KEY + "\n")
+    monkeypatch.setenv("TAVILY_API_KEY", "short")
+
+    secrets = chained._known_secrets(LadderConfig(tavily_api_key="tvly-configured-key-9876"))
+
+    assert secrets == ("tvly-configured-key-9876", FIRECRAWL_KEY, FIRECRAWL_KEY + "\n")
+
+
 @pytest.mark.anyio
 async def test_long_reasons_are_single_line_and_truncated(ladder):
     ladder.configure(tiers=["jina"])
@@ -755,6 +984,24 @@ async def test_jina_only_success_is_byte_identical_to_the_jina_tool(configure, j
 
     assert chained_result == jina_result
     assert "Rice is a staple" in chained_result
+    assert firecrawl.factory_calls == []
+    assert tavily.factory_calls == []
+
+
+@pytest.mark.anyio
+async def test_jina_only_thin_page_is_byte_identical_to_the_jina_tool(configure, jina, firecrawl, tavily, monkeypatch):
+    """Real readability on a short page: the single attempted rung is thin and nothing else is wrong, so the chained
+    tool hands back exactly what the Jina tool hands back."""
+    configure(tiers=["jina"])
+    jina_config = SimpleNamespace(get_tool_config=lambda name: None)
+    monkeypatch.setattr("deerflow.community.jina_ai.tools.get_app_config", lambda: jina_config)
+    jina.response = html_page("The Q3 bulletin moves to 14 October; the Q4 bulletin date is unchanged.", title="Release calendar")
+
+    chained_result = await fetch()
+    jina_result = await jina_web_fetch_tool.ainvoke({"url": URL})
+
+    assert chained_result == jina_result
+    assert chained_result.startswith("# Release calendar\n\n")
     assert firecrawl.factory_calls == []
     assert tavily.factory_calls == []
 

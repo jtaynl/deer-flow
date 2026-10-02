@@ -6,7 +6,7 @@ has, in the spirit of the host-side ``pmi_engine.fetch`` ladder: whenever a rung
 for ANY reason: transport error, Jina error shell, challenge page, thin page, timeout — the next rung is
 tried, every rung's result goes through the same two gates, and the first rung that clears both wins.
 
-The gates (``_reject_reason``):
+The gates (``_judge``):
 
 * **error / challenge shell** — a reader that answers 200 with a page that is not the page has FAILED;
   the page is never content. Jina's own shell (``Warning: Target URL returned error <NNN>`` /
@@ -15,8 +15,14 @@ The gates (``_reject_reason``):
   cookies", Akamai's "Access Denied", CloudFront's "Request blocked", a captcha, a bare "403 Forbidden"…).
   The detection is deliberately conservative — short texts only — so a genuine article that mentions
   "access denied" in a long body is never rejected. A bare "Cloudflare" counts only on a tiny body.
+  Firecrawl also reports the target's own HTTP status (``metadata.status_code``): 400 and above is a
+  branded error page, however long — never content.
 * **content floor** — fewer than ``min_content_chars`` characters of extracted text (title line excluded)
   is THIN: typically the navigation shell of a JS-rendered page (Tavily is prone to it). ``0`` disables.
+  Thin is the one failure a later rung may CONFIRM rather than cure: when every attempted rung fails on
+  the floor alone — no shell, no error, no timeout anywhere; skipped (no key) and disabled rungs do not
+  count — the page is most likely just short, and ``thin_policy: longest`` (the default) returns the
+  longest of those thin pages; ``thin_policy: error`` returns the exhausted error instead.
 
 Exhausted → ONE ``Error: web_fetch ladder exhausted — jina: <reason>; firecrawl: <reason>; tavily:
 <reason>`` string: the model sees it and the research prompts send it to the browser tools next. Every
@@ -40,10 +46,12 @@ HTTP client after every call (upstream fix #6013, ``5312271f``, mirrored here be
       - name: web_fetch
         group: web
         use: deerflow.community.wri_chained_fetch.tools:web_fetch_tool
-        timeout: 60               # seconds: Jina X-Timeout + httpx timeout; also bounds EACH fallback rung
+        timeout: 60               # seconds: Jina X-Timeout + httpx timeout (the Jina rung)
+        fallback_timeout: 60      # seconds: bounds EACH fallback rung (Firecrawl, Tavily); default = timeout
         proxy: null               # forwarded to the Jina httpx client, exactly as the Jina tool does
         trust_env: true           # idem
         min_content_chars: 500    # content floor on the extracted text (title line excluded); 0 disables
+        thin_policy: longest      # every attempted rung thin and nothing else wrong: return the longest thin page; "error" = the exhausted error
         max_chars: 4096           # output cap — the stock tools' cap
         tiers: [jina, firecrawl, tavily]   # the ladder in order; drop a name to disable that rung
         firecrawl_api_key: null   # optional; otherwise the SDK reads FIRECRAWL_API_KEY from the environment
@@ -52,7 +60,9 @@ HTTP client after every call (upstream fix #6013, ``5312271f``, mirrored here be
 
 Environment (names only): ``JINA_API_KEY`` (optional — higher Jina rate limit), ``FIRECRAWL_API_KEY``
 (without it, and without ``firecrawl_api_key``, the Firecrawl rung is skipped — logged), ``TAVILY_API_KEY``
-(idem for the Tavily rung). Worst case wall-clock = ``timeout`` × the number of enabled rungs.
+(idem for the Tavily rung). Worst-case wall clock = ``timeout`` (Jina) + ``fallback_timeout`` (Firecrawl)
++ min(``fallback_timeout``, 30) (Tavily — its SDK caps ``extract`` at 30 s itself): 270 s with the
+instance's ``timeout: 120`` and no ``fallback_timeout``, 210 s with ``fallback_timeout: 60``.
 
 Smoke after a rebuild — inside the gateway: a known-good long page, a URL that forces the ladder (Jina got a
 CloudFront 403 shell there on 25 Sep 2026 — pmi finding) and a URL every rung must fail. INFO logging prints
@@ -92,6 +102,8 @@ DEFAULT_TIERS: tuple[str, ...] = ("jina", "firecrawl", "tavily")
 DEFAULT_TIMEOUT = 60
 DEFAULT_MIN_CONTENT_CHARS = 500
 DEFAULT_MAX_CHARS = 4096
+THIN_POLICIES: tuple[str, ...] = ("longest", "error")
+DEFAULT_THIN_POLICY = "longest"
 
 CHALLENGE_TEXT_MAX_CHARS = 2_500
 """A text this long or longer is never taken for a challenge shell (conservative, as in ``pmi_engine.fetch``)."""
@@ -102,7 +114,9 @@ CHALLENGE_MARKERS: tuple[str, ...] = (
     "enable javascript and cookies",  # Cloudflare / PerimeterX
     "attention required",  # Cloudflare block page title
     "checking your browser",
-    "verify you are human",
+    "checking if the site connection is secure",  # Cloudflare interstitial body (older wording)
+    "review the security of your connection",  # Cloudflare interstitial body — survives when the title does not
+    "you are human",  # "Verify / Verifying you are human" (Cloudflare Turnstile)
     "access denied",  # Akamai
     "request blocked",  # CloudFront
     "the request could not be satisfied",  # CloudFront
@@ -132,9 +146,11 @@ _WS_RE = re.compile(r"\s+")
 @dataclass(frozen=True)
 class LadderConfig:
     timeout: int = DEFAULT_TIMEOUT
+    fallback_timeout: int = DEFAULT_TIMEOUT
     proxy: str | None = None
     trust_env: bool = True
     min_content_chars: int = DEFAULT_MIN_CONTENT_CHARS
+    thin_policy: str = DEFAULT_THIN_POLICY
     max_chars: int = DEFAULT_MAX_CHARS
     tiers: tuple[str, ...] = DEFAULT_TIERS
     firecrawl_api_key: str | None = None
@@ -177,6 +193,17 @@ def _coerce_str(value: object) -> str | None:
     return text or None
 
 
+def _coerce_choice(value: object, choices: tuple[str, ...], default: str, *, key: str) -> str:
+    if value is None:
+        return default
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in choices:
+            return normalized
+    logger.warning("web_fetch ladder: ignoring unknown %r config %r; using %r", key, value, default)
+    return default
+
+
 def _coerce_tiers(value: object) -> tuple[str, ...]:
     if value is None:
         return DEFAULT_TIERS
@@ -205,11 +232,14 @@ def _coerce_tiers(value: object) -> tuple[str, ...]:
 def _load_config() -> LadderConfig:
     config = get_app_config().get_tool_config(TOOL_NAME)
     extra = getattr(config, "model_extra", None) or {}
+    timeout = _coerce_int(extra.get("timeout"), DEFAULT_TIMEOUT, minimum=1)
     return LadderConfig(
-        timeout=_coerce_int(extra.get("timeout"), DEFAULT_TIMEOUT, minimum=1),
+        timeout=timeout,
+        fallback_timeout=_coerce_int(extra.get("fallback_timeout"), timeout, minimum=1),
         proxy=_coerce_str(extra.get("proxy")),
         trust_env=_coerce_bool(extra.get("trust_env"), True),
         min_content_chars=_coerce_int(extra.get("min_content_chars"), DEFAULT_MIN_CONTENT_CHARS, minimum=0),
+        thin_policy=_coerce_choice(extra.get("thin_policy"), THIN_POLICIES, DEFAULT_THIN_POLICY, key="thin_policy"),
         max_chars=_coerce_int(extra.get("max_chars"), DEFAULT_MAX_CHARS, minimum=1),
         tiers=_coerce_tiers(extra.get("tiers")),
         firecrawl_api_key=_coerce_str(extra.get("firecrawl_api_key")),
@@ -221,6 +251,23 @@ def _load_config() -> LadderConfig:
 # ---------------------------------------------------------------------------
 # gates — a 200 that is not the page is never content
 # ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class RungResult:
+    """What a rung yielded. ``document`` (``# <title>\\n\\n<body>``) when the page cleared both gates;
+    otherwise ``reason`` says why not — and ``thin`` carries the document when the floor was the ONLY
+    objection (see ``thin_policy``). ``skipped`` marks a rung that never ran (no key)."""
+
+    reason: str
+    document: str | None = None
+    thin: str | None = None
+    chars: int = 0
+    skipped: bool = False
+
+
+def _document(title: str, body: str) -> str:
+    return f"# {title}\n\n{body}"
 
 
 def _jina_error_shell(text: str) -> str | None:
@@ -251,18 +298,18 @@ def _challenge_marker(text: str) -> str | None:
     return None
 
 
-def _reject_reason(title: str, body: str, min_content_chars: int) -> str | None:
-    """None when ``title`` + ``body`` is content; otherwise why it is not (shell first, then the floor)."""
+def _judge(title: str, body: str, min_content_chars: int) -> RungResult:
+    """Content when ``title`` + ``body`` clears both gates; otherwise why not (shell first, then the floor)."""
     shell = _jina_error_shell(f"{title}\n{body}")
     if shell is not None:
-        return shell
+        return RungResult(reason=shell)
     marker = _challenge_marker(f"{title}\n{body}")
     if marker is not None:
-        return f"challenge/error shell ({marker!r})"
+        return RungResult(reason=f"challenge/error shell ({marker!r})")
     length = len(body.strip())
     if length < min_content_chars:
-        return f"thin content ({length} chars < min_content_chars {min_content_chars})"
-    return None
+        return RungResult(reason=f"thin content ({length} chars < min_content_chars {min_content_chars})", thin=_document(title, body), chars=length)
+    return RungResult(reason=f"ok ({len(body)} chars)", document=_document(title, body), chars=len(body))
 
 
 # ---------------------------------------------------------------------------
@@ -320,82 +367,70 @@ async def _aclose_tavily_client(client: object) -> None:
 
 
 # ---------------------------------------------------------------------------
-# rungs — each returns (document, reason): document is "# <title>\n\n<body>" or None
+# rungs
 # ---------------------------------------------------------------------------
-
-RungResult = tuple[str | None, str]
-
-
-def _document(title: str, body: str) -> str:
-    return f"# {title}\n\n{body}"
 
 
 async def _run_jina(url: str, config: LadderConfig) -> RungResult:
     body = await JinaClient().crawl(url, return_format="html", timeout=config.timeout, proxy=config.proxy, trust_env=config.trust_env)
     if not isinstance(body, str) or not body.strip():
-        return None, "empty response"
+        return RungResult(reason="empty response")
     if body.startswith("Error:"):
-        return None, body.removeprefix("Error:").strip()
+        return RungResult(reason=body.removeprefix("Error:").strip())
     shell = _jina_error_shell(body)
     if shell is not None:
-        return None, shell
+        return RungResult(reason=shell)
     article = await asyncio.to_thread(readability_extractor.extract_article, body, url=url)
-    title = article.title
-    content = article.to_markdown(including_title=False)
-    reason = _reject_reason(title, content, config.min_content_chars)
-    if reason is not None:
-        return None, reason
-    return _document(title, content), f"ok ({len(content)} chars)"
+    return _judge(article.title, article.to_markdown(including_title=False), config.min_content_chars)
 
 
 async def _run_firecrawl(url: str, config: LadderConfig) -> RungResult:
     api_key = config.firecrawl_api_key or _coerce_str(os.environ.get("FIRECRAWL_API_KEY"))
     if api_key is None:
-        return None, "skipped (FIRECRAWL_API_KEY not set and no firecrawl_api_key configured)"
+        return RungResult(reason="skipped (FIRECRAWL_API_KEY not set and no firecrawl_api_key configured)", skipped=True)
     client = _get_firecrawl_client(api_key=api_key, api_url=config.firecrawl_base_url)
     try:
-        result = await asyncio.wait_for(client.scrape(url, formats=["markdown"]), timeout=config.timeout)
+        result = await asyncio.wait_for(client.scrape(url, formats=["markdown"]), timeout=config.fallback_timeout)
     finally:
         await _aclose_firecrawl_client(client)
-    content = getattr(result, "markdown", None) or ""
     metadata = getattr(result, "metadata", None)
+    # The SDK reports the target's own HTTP status; a branded 4xx/5xx page is never content, however long.
+    status = getattr(metadata, "status_code", None)
+    if isinstance(status, int) and not isinstance(status, bool) and status >= 400:
+        return RungResult(reason=f"target returned {status}")
+    content = getattr(result, "markdown", None) or ""
     title = _coerce_str(getattr(metadata, "title", None)) or "Untitled"
     if not content.strip():
-        return None, "no content found"
-    reason = _reject_reason(title, content, config.min_content_chars)
-    if reason is not None:
-        return None, reason
-    return _document(title, content), f"ok ({len(content)} chars)"
+        return RungResult(reason="no content found")
+    return _judge(title, content, config.min_content_chars)
 
 
 async def _run_tavily(url: str, config: LadderConfig) -> RungResult:
     api_key = config.tavily_api_key or _coerce_str(os.environ.get("TAVILY_API_KEY"))
     if api_key is None:
-        return None, "skipped (TAVILY_API_KEY not set and no tavily_api_key configured)"
+        return RungResult(reason="skipped (TAVILY_API_KEY not set and no tavily_api_key configured)", skipped=True)
     client = _get_tavily_client(api_key=api_key)
     try:
-        response = await asyncio.wait_for(client.extract([url]), timeout=config.timeout)
+        # The stock Tavily tool's call shape; the SDK caps the request at 30 s itself (its own TimeoutError).
+        response = await asyncio.wait_for(client.extract([url]), timeout=config.fallback_timeout)
     finally:
         await _aclose_tavily_client(client)
     if not isinstance(response, dict):
-        return None, "unexpected extract response"
+        return RungResult(reason="unexpected extract response")
     failed = response.get("failed_results") or []
     if failed:
         first_failure = failed[0] if isinstance(failed[0], dict) else {}
-        return None, f"extract failed: {first_failure.get('error') or 'unknown error'}"
+        return RungResult(reason=f"extract failed: {first_failure.get('error') or 'unknown error'}")
     results = response.get("results") or []
     if not results or not isinstance(results[0], dict):
-        return None, "no results found"
+        return RungResult(reason="no results found")
     result = results[0]
     # Extract results guarantee a URL and content, but not a page title.
     title = _coerce_str(result.get("title")) or _coerce_str(result.get("url")) or url
     content = result.get("raw_content") or ""
     if not isinstance(content, str) or not content.strip():
-        return None, "no content found"
-    reason = _reject_reason(title, content, config.min_content_chars)
-    if reason is not None:
-        return None, reason
-    return _document(title, content), f"ok ({len(content)} chars)"
+        return RungResult(reason="no content found")
+    return _judge(title, content, config.min_content_chars)
 
 
 _RUNGS: dict[str, Callable[[str, LadderConfig], Awaitable[RungResult]]] = {
@@ -405,12 +440,18 @@ _RUNGS: dict[str, Callable[[str, LadderConfig], Awaitable[RungResult]]] = {
 }
 
 
+def _rung_timeout(tier: str, config: LadderConfig) -> int:
+    return config.timeout if tier == "jina" else config.fallback_timeout
+
+
 # ---------------------------------------------------------------------------
 # the ladder
 # ---------------------------------------------------------------------------
 
 
 def _known_secrets(config: LadderConfig) -> tuple[str, ...]:
+    """Every key the ladder knows, stripped AND raw: the rungs hand the SDKs the STRIPPED environment
+    value, so a key echoed by an SDK error comes back without the whitespace a ``.env`` line may carry."""
     candidates = (
         config.firecrawl_api_key,
         config.tavily_api_key,
@@ -418,7 +459,14 @@ def _known_secrets(config: LadderConfig) -> tuple[str, ...]:
         os.environ.get("TAVILY_API_KEY"),
         os.environ.get("JINA_API_KEY"),
     )
-    return tuple(secret for secret in candidates if isinstance(secret, str) and len(secret.strip()) >= 8)
+    secrets: list[str] = []
+    for candidate in candidates:
+        if not isinstance(candidate, str) or len(candidate.strip()) < 8:
+            continue
+        for form in (candidate.strip(), candidate):
+            if form not in secrets:
+                secrets.append(form)
+    return tuple(secrets)
 
 
 def _short_reason(reason: str, secrets: tuple[str, ...]) -> str:
@@ -442,25 +490,30 @@ def _loggable_url(url: str) -> str:
 async def _run_ladder(url: str, config: LadderConfig) -> str:
     secrets = _known_secrets(config)
     shown_url = _loggable_url(url)
-    outcomes: list[tuple[str, str]] = []
+    outcomes: list[tuple[str, RungResult]] = []
     for tier in config.tiers:
         rung = _RUNGS[tier]
         try:
-            document, reason = await rung(url, config)
+            result = await rung(url, config)
         except TimeoutError:
-            document, reason = None, f"timed out after {config.timeout}s"
+            result = RungResult(reason=f"timed out after {_rung_timeout(tier, config)}s")
         except Exception as exc:
-            document, reason = None, f"{type(exc).__name__}: {exc}"
-        reason = _short_reason(reason, secrets)
-        if document is not None:
+            result = RungResult(reason=f"{type(exc).__name__}: {exc}")
+        reason = _short_reason(result.reason, secrets)
+        if result.document is not None:
             logger.info("web_fetch ladder: tier=%s outcome=ok reason=%s url=%s", tier, reason, shown_url)
-            return document[: config.max_chars]
+            return result.document[: config.max_chars]
         logger.info("web_fetch ladder: tier=%s outcome=fail reason=%s url=%s", tier, reason, shown_url)
-        outcomes.append((tier, reason))
-    for tier in DEFAULT_TIERS:
-        if tier not in config.tiers:
-            outcomes.append((tier, "disabled"))
-    summary = "; ".join(f"{tier}: {reason}" for tier, reason in outcomes)
+        outcomes.append((tier, RungResult(reason=reason, thin=result.thin, chars=result.chars, skipped=result.skipped)))
+    attempted = [(tier, result) for tier, result in outcomes if not result.skipped]
+    if config.thin_policy == "longest" and attempted and all(result.thin is not None for _, result in attempted):
+        # Every reader that ran agrees the page is short and none saw a shell or an error: a short page, not a shell.
+        tier, result = max(attempted, key=lambda item: item[1].chars)
+        logger.info("web_fetch ladder: tier=%s outcome=thin reason=every attempted rung thin; returning the longest (%d chars) url=%s", tier, result.chars, shown_url)
+        return (result.thin or "")[: config.max_chars]
+    summary_parts = [f"{tier}: {result.reason}" for tier, result in outcomes]
+    summary_parts.extend(f"{tier}: disabled" for tier in DEFAULT_TIERS if tier not in config.tiers)
+    summary = "; ".join(summary_parts)
     logger.warning("web_fetch ladder exhausted — %s url=%s", summary, shown_url)
     return EXHAUSTED_PREFIX + summary
 
