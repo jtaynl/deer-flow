@@ -2066,6 +2066,54 @@ sg docker -c 'docker logs --since 5m deer-flow-gateway 2>&1 \
 - **3a/3b:** clean boot, :2026 → 200, extensions_config.json md5 UNCHANGED (RW-mount watch), sentinel in sync, all invariants by instantiation (consolidation F / eviction confidence / authz F / heartbeat F / retrieval '' / plugins [] / subagent_batches F / head 0016).
 - **3c:** PW_STRONG PASS (first); chat×3 kimi/qwen/deepseek OK; sandbox bash `smoke-42` + present_files OK; subagent OK; thread-id 64 OK / 65 rejected; re-skin login 200 + WRI / 0 deerflow.tech / api 401; gateway log clean. (Smoke params per 08-24 lesson: recursion_limit 100, dot-free thread ids.)
 
+### 2026-10-02 sync — 82 commits, merge `fd295344` (`main`@`63e399f2`; 2.2.0-dev, config_version latest still 50)
+- **MERGED 2026-10-02 06:18 UTC on the owner's "go ahead and sync" (parents `0895a30f` + `63e399f2`), `git merge --no-edit` CLEAN; POST-MERGE VERIFIED on the working tree: keepers DeerFlow 3/3, tally WRI AI 41 en / 40 zh, Dockerfile / compose / deploy.sh / .dockerignore / schema_sync.py byte-identical to pre-merge, compose redis refs 0, auth pages 0 `deerflow.tech`, migrations 0027 + 0028 present, `#6013` helper present, tree clean. Deploy (`make down && make up`) is owner-run and PENDING; 3a/3b/3c below are filled after it. ⚠ Until then local-fixes is MERGED BUT UNDEPLOYED and UNPUSHED (push only after the deploy verification, runbook step 4). The fork-owned chained `web_fetch` module (fetch-plan item 3) is merged separately before the same rebuild — see its own entry.**
+- **Forecast (read-only, before any merge): merge-tree exit 0 (tree `87746da8`), ZERO conflicts. TWO MIGRATIONS (first since 0026):
+  `0027_notification_deliveries` (new table, `has_table`-guarded) → `0028_parked_attempts` (adds `parked_attempts INTEGER NOT NULL`,
+  guarded by column inspection; temporary `server_default='0'` then `DROP DEFAULT`), chained LINEARLY after `0026_mcp_task_lease_tokens`
+  — no re-parent, so the 17 Sep trap does not apply; expect the boot log `0026_mcp_task_lease_tokens -> 0028_parked_attempts`.
+  Runtime-inert for us: `scheduler.enabled: false` and no `channel_connections` block → `_scheduled_task_notification_repos` returns
+  `(None, None)`, no delivery worker. ⚠ BEFORE 3b: `~/deer-flow-sync-backups/probe_3b_inside.py` line 112 pins the head at 0026 —
+  replace with the patched copy (`<scratchpad>/presync/probe_3b_inside.py`, one-line diff → `0028_parked_attempts`).**
+- **Carried surfaces (blob-verified in the merge-tree result):** locales absorb +19 lines each (18 neutral `inputBox.mention*` keys from
+  `#6063`, `runDuration.completedIn` reworded by `#6057`, `mentionRemoveSkill` added by `#6063` and removed again by `#6154`) with ZERO
+  branding strings → keepers 3+3, tally 41 en / 40 zh, 0 `deerflow.tech`; EVERY other carried file byte-identical (backend/Dockerfile incl.
+  all Playwright markers — upstream has none; compose keeps redis-strip, services nginx/frontend/gateway(+provisioner gated off);
+  `scripts/deploy.sh` same blob `7e487b43`; auth pages / nav / landing / assets / schema_sync.py untouched). `extensions_config.json`
+  md5 `efba0945`; `config.yaml` md5 `63227485` (post 2 Oct web_fetch 120 s edit) LOADS under upstream's config package by instantiation.
+- **Behaviour changes judged for this instance (pipeline-relevant = invariant 7):** `#6058` bash_tool now prepends
+  `export DEERFLOW_USER_ID=<id>; ` to EVERY sandbox command (AIO path: user_prefix + channel_prefix + `cd /mnt/user-data/workspace; ` + cmd;
+  embedded LGI/PMI runs get the default user id) — identifier only, timeout 600/truncation untouched; `#6020` read-before-write gate
+  tightened (in-band read_file contract results no longer stamp a read mark → a write after a failed/empty-range read is BLOCKED until a
+  real read; block message now carries the line count + a start_line/end_line hint; range-error string reworded) — expect a few more gate
+  blocks in long report-writing runs; `#6046` glob/grep patterns with `/` are now root-anchored and `**` spans zero-or-more dirs
+  (`dir/*.ext` may return fewer, `**` more); `#6109`/`#6150`/`#6112` tool-output externalisation: deterministic
+  `<tool>-<tool_call_id>.<ext>` names, exclusive temp file + `os.replace`, byte-exact sandbox check (host path unchanged for our
+  LocalContainerBackend); `#5566` summarization anchors the profile model to the RUN model — with `model_name: null`, trigger tokens 32000,
+  keep 10 messages it is byte-for-byte the previous choice (thinking stays off for summaries: all six roster models are `optional`);
+  `#4541`/`#6105` authz Phase 3 + middleware-declared tools rewire lead/embedded assembly and the async tool-result path, but
+  `authorization.enabled: false` → `resolve_skill_authorization` None, `narrow_declared_tools` strict no-op, `verify_declared_tool_view`
+  skipped; `#6082` prompt gains `bash_available` (True for us: `bash` bound) → rendered prompt unchanged, overlay hook (prompt.py:1164)
+  intact, template has 0 `<language>` → probe count stays 1; `#6088` null `max_total_subagents` → config default 6 (unchanged);
+  `#6132` todo completion reminder survives a retried model call; `#6117` `exec < /dev/null` prefix only on the bash.exec transport
+  (env-carrying calls; our bash tool stays on the persistent /v1/shell PTY); `#6083` subagent return_direct extraction (empty set for
+  builtin subagents); `#6013` Firecrawl per-call client pool closed in `finally` (inert until the chained-fetch module lands);
+  `#6126` MCP cache-reset marker `.extensions_config.json.mcp-cache-reset.json` written beside the config only on an admin reset
+  (container FS, not persisted); `#5956` thread deletion now closes that thread's Playwright MCP session (net positive).
+- **New config validators (contract change, invariant 8) — ALL PASS by instantiation on the live values:** `#6026` sandbox
+  port(1..65535)/idle_timeout(ge 0)/boolean rejection on 10 numeric sandbox fields (ours: replicas 4, timeout 600, output caps
+  20000/50000/20000, port/idle unset), summarization.trim_tokens_to_summarize ge 1 (32000), run_events.max_trace_content ge 1 (10240),
+  model stream_chunk_timeout gt 0 + context_window boolean rejection (both unset on all 6 models), MCP tool_call_timeout /
+  session_init_timeout gt 0 (playwright entry sets neither), OAuth refresh_skew ge 0 (no oauth), CircuitBreaker failure_threshold ge 1 /
+  recovery_timeout_sec gt 0 (defaults 5/60); `#5850` stream_bridge recovered_stream_cleanup_delay le 86400 (no block);
+  `#6017` loop_detection boolean rejection (ours 3/5/20/100/30/50 ints). `config.example.yaml` diff = comments only (no new/renamed keys).
+- **Deps:** backend/pyproject.toml, uv.lock, frontend/package.json, pnpm-lock.yaml ALL unchanged → no CVE entries; CHANGELOG `#6121`
+  (+2118 lines) carries no CVE/GHSA ids. `pii_redaction` untouched in range and still OFF (`enabled False` by instantiation);
+  DeerMem `consolidation_enabled False`, `injection_enabled False` unchanged.
+- **3a:** PENDING the owner-run rebuild — expect 3 containers, `Application startup complete`, 0 tracebacks, bootstrap `0026_mcp_task_lease_tokens -> 0028_parked_attempts`, :2026 and `/login` 200, extensions md5 `efba0945`.
+- **3b:** PENDING — sentinel `schema in sync`; the PATCHED probe (head pin `0028_parked_attempts`, persisted in `~/deer-flow-sync-backups/`, old copy kept as `20261002-0538/probe_3b_inside.py.pre-0028`) must report `ok: true`.
+- **3c:** PENDING — PW_STRONG first; ALL_OK battery; LANG_OK; NEW `smoke_firecrawl_inside.py` (persisted; FIRECRAWL_OK = key present in the recreated gateway env, provider fetch ok, denied page = Error string, chained ladder exhausts naming every rung); delete the PW smoke thread (#5956) and check the gateway log stays clean.
+
 ### 2026-09-29 sync — 176 commits, merge `5cc9b125` (`main`@`8a3a309d`; range includes the **v2.1.0** tag, main now 2.2.0-dev)
 - **Merge CLEAN (merge-tree exit 0, zero conflicts), NO migrations (head stays `0026_mcp_task_lease_tokens`,
   bootstrap `0026 -> 0026` no-op), ALL carried surfaces intact:** locales +21/+19 lines with ZERO branding

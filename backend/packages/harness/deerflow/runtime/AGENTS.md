@@ -26,6 +26,8 @@ Checkpointer storage runs in one of two channel modes, selected by `checkpoint_c
 
 **Message sequence placement:** Keep backend and frontend message identity rules aligned. Details: `backend/docs/runtime-guidance-details.md`.
 
+**Thread message cursors:** `list_messages` applies both exclusive bounds before `limit`, paging forward whenever `after_seq` is supplied.
+
 **Human-input capture** (`runtime/journal.py`): track capture separately from
 the optional display summary. Image-only input has no text but must still stop
 the batch scan and later model calls from appending another human-input event.
@@ -90,6 +92,8 @@ run reads, and sequence recovery split on physical newlines. Do not use
 part of the record. Preserve existing UTF-8 files and the writer format.
 `tests/test_jsonl_event_store_unicode.py` covers Unicode values, reopening,
 idempotent writes, LF/CRLF, blank lines, and malformed records.
+Reads and deletes treat a run ID writes reject as an unknown run (routes pass
+URL IDs through); writes still raise.
 
 **Targeted run-event attribution** (`runtime/events/store/`):
 `RunEventStore.find_latest_ai_message_run_ids()` has a complete-or-error
