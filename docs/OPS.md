@@ -66,6 +66,7 @@ docker compose -p deer-flow -f docker/docker-compose.yaml logs -f
 docker logs --tail 200 -f deer-flow-gateway      # backend only
 docker logs --tail 200 -f deer-flow-frontend     # Next.js
 docker logs --tail 50  -f deer-flow-nginx        # internal nginx (compose)
+docker logs --tail 50  -f deer-flow-redis        # sandbox ownership lease store (note 20a)
 
 sudo systemctl reload caddy      # after /etc/caddy/Caddyfile edits
 sudo journalctl -u caddy -f
@@ -843,7 +844,12 @@ git checkout local-fixes
     (inode-preserving; the stanza is the only redis consumer — embedded processes
     pick up `memory` on their next start, the gateway on recreate), then
     `make down && make up`. The idle redis container is harmless and may stay; to
-    drop it too, `git revert` the un-strip commit on `local-fixes` and redeploy.
+    drop it too (full revert, back to the 2 Oct compose) run, in this order,
+    `python3 ~/deer-flow-sync-backups/config_edit_sandbox_ownership_redis.py --revert && git -C /home/brandon/deer-flow revert --no-edit 434b6574d6a583bac536205d6dae0fb45d59e282 && cd /home/brandon/deer-flow && make down && make up`
+    — the stanza MUST be reverted before the compose revert, or every sandbox
+    turn fails closed (a `sandbox.ownership: redis` stanza with no redis service
+    makes every sandbox acquire raise `OwnershipBackendError`; `--revert` is
+    idempotent, so it is safe to run first even when it already happened).
     Keep `stream_bridge` ABSENT from `config.yaml` either way. Runbook:
     `~/deer-flow-sync-backups/REDIS_OWNERSHIP_RUNBOOK.md`.
 
