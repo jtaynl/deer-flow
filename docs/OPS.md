@@ -108,10 +108,25 @@ pilot threads of 1 Oct the agent's `web_fetch` failed 9 of 190 calls, 8 of them 
 value as `X-Timeout`; Jina allows up to 180). The rest of the plan: upstream sync (two-step), then ONE additive chained `web_fetch` module (Jina →
 Firecrawl → Tavily extract; `FIRECRAWL_API_KEY` in `.env`, never the gist), prompt lines in the PMI and LGI research prompts; ScrapingBee stays host-side.
 
-## Instance config change — 2026-10-03 (PREPARED on branch `redis-ownership`; deploy + edit are OWNER-RUN): `sandbox.ownership` → redis
+## Instance config change — 2026-10-03 (DEPLOYED 17:50–17:53 UTC on the owner's instruction): `sandbox.ownership` → redis
 
-**Status: PREPARED, NOT DEPLOYED** — the owner runs `~/deer-flow-sync-backups/REDIS_OWNERSHIP_RUNBOOK.md` (merge `--ff-only`,
-`make down`, the edit script, `make up`, 3a/3b/smoke, gist refresh) and then records the deploy here (inode, md5, gist time).
+**Status: DEPLOYED 3 October 2026** — `~/deer-flow-sync-backups/REDIS_OWNERSHIP_RUNBOOK.md` run end to end on the owner's
+instruction ("go ahead with Redis"): pre-checks clean (0 embedded clients, no sandboxes, 3× Up, inode 536614, md5 `cace376e…`);
+ff-merge of `redis-ownership` 17:49 UTC (`434b6574` + `38e33d12`; local tag `pre-redis-ownership-20261003`; instance backup
+`~/deer-flow-sync-backups/20261003-1749-redis-ownership/`); `make down` 17:49:57; the edit script 17:50 (inode 536614 → 536614,
+md5 `cace376e68b0c1e6a054b6e41719206e` → **`83cdcc63e97d90d14c7b5f8d80e05259`**, backup
+`~/deer-flow-sync-backups/20261003-1750/config.yaml.pre-redis-ownership`); `make up` 17:50:43–17:52:58 (≈ 3 min of downtime).
+3a: 4× Up (nginx, frontend, gateway healthy, **redis healthy**), bootstrap `0028_parked_attempts`, startup complete, no
+error/traceback lines, no `STREAM_BRIDGE_REDIS` variable in the gateway env, the fork's loader inside the container reports
+`ownership: redis redis://redis:6379/0 ttl 180.0` and `redis ping: True`. 3b: probe `ok: true`, `fails: []`,
+`sandbox_ownership_type: redis`, 6 models; `schema_sync.py` in sync. Smoke **`OWNERSHIP_OK`** (ts 1791050020, 17:53:40–17:56:28):
+both replies DONE (115.1 s / 113.5 s — the full 100-s task), `cross_kill: []`, two `own:` leases with distinct owner ids at
++16 s, `adopted_peers: []` on both, every kill after its own run's end, leases released; logs
+`~/deer-flow-sync-backups/smoke_ownership_logs/1791050020/`. Gist refreshed 2026-10-03T17:56:41Z (config.yaml and
+extensions_config.json both "gist copy identical"). The gateway's own `Sandbox ownership store: redis` line is LAZY — it appears
+on the gateway process's first sandbox acquire (the next web-UI sandbox turn); the embedded processes' stores were asserted by the
+smoke. From here `probe_3b_inside.py` expects `sandbox_ownership_type == "redis"` (memory-era copy kept beside it). Embedded
+research batches may now run concurrently, bounded by the host (≤ 3–4 sandboxes; capacity is still per process).
 Why: note 20a — several embedded `DeerFlowClient` processes (the WRI research batches: `docker exec … python -`, one per thread)
 share one sandbox backend, and under the per-process `memory` ownership store they adopt and destroy each other's live sandboxes
 (#4206; observed 2 Oct 2026, batches serialized since). The compose/deploy side (redis service + `depends_on` + `services`) is
