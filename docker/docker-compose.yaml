@@ -5,7 +5,10 @@
 #   - nginx:       Reverse proxy (port 2026, configurable via PORT env var)
 #   - frontend:    Next.js production server
 #   - gateway:     FastAPI Gateway API + agent runtime
-#   - redis:       Redis Streams backend for cross-worker SSE stream bridge
+#   - redis:       Redis — in this fork the SANDBOX OWNERSHIP STORE only
+#                  (config.yaml sandbox.ownership.type: redis, docs/OPS.md note 20a);
+#                  the SSE stream bridge stays `memory` (one gateway worker), so
+#                  DEER_FLOW_STREAM_BRIDGE_REDIS_URL is deliberately NOT set below
 #   - provisioner: (optional) Sandbox provisioner for Kubernetes mode
 #
 # Key environment variables (set via environment/.env or scripts/deploy.sh):
@@ -25,6 +28,27 @@
 # Access: http://localhost:${PORT:-2026}
 
 services:
+  # redis-strip (2026-07-04, 08a1a242) PARTIALLY REVERSED 2026-10-03: the service, its volume and the
+  # gateway's depends_on gate are back — exactly as upstream carries them — because the embedded
+  # DeerFlowClient research batches (several `docker exec … python -` processes sharing this gateway's
+  # sandbox container backend) need a cross-process ownership store (#4206). Still stripped on purpose:
+  # the gateway's DEER_FLOW_STREAM_BRIDGE_REDIS_URL env (stream_bridge stays memory, GATEWAY_WORKERS=1).
+  # ── Redis Stream Bridge ────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: deer-flow-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - deer-flow
+    restart: unless-stopped
+
   # ── Reverse Proxy ──────────────────────────────────────────────────────────
   nginx:
     image: nginx:alpine
@@ -140,9 +164,12 @@ services:
       - ../.env
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    # redis-strip: upstream also adds `depends_on: redis: service_healthy` here — we carry no redis
-    # service (single-instance, ownership.type memory), so only the healthcheck is grafted. Nginx's
-    # `depends_on: gateway: service_healthy` (merged clean below) requires this healthcheck to exist.
+    # 2026-10-03: the upstream `depends_on: redis: service_healthy` gate is back (sandbox ownership store;
+    # see the redis service above). Note the gateway's environment still carries NO
+    # DEER_FLOW_STREAM_BRIDGE_REDIS_URL — the ownership store is selected explicitly in config.yaml.
+    depends_on:
+      redis:
+        condition: service_healthy
     healthcheck:
       # /health/ready runs both probes concurrently within a 3s endpoint
       # deadline; the client timeout must stay above that bound.
@@ -202,6 +229,9 @@ services:
       interval: 10s
       timeout: 5s
       retries: 6
+volumes:
+  redis-data:
+
 networks:
   deer-flow:
     driver: bridge

@@ -400,7 +400,9 @@ echo -e "${BLUE}Sandbox mode: $sandbox_mode${NC}"
 
 echo -e "${BLUE}Runtime: Gateway embedded agent runtime${NC}"
 
-services="frontend gateway nginx"
+# 2026-10-03: redis is back in the service list (sandbox ownership store for the embedded research
+# batches, docs/OPS.md note 20a) — the gateway now `depends_on` it, so `up` must bring it along.
+services="redis frontend gateway nginx"
 
 if [ "$sandbox_mode" = "provisioner" ]; then
     services="$services provisioner"

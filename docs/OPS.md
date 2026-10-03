@@ -107,6 +107,60 @@ pilot threads of 1 Oct the agent's `web_fetch` failed 9 of 190 calls, 8 of them 
 value as `X-Timeout`; Jina allows up to 180). The rest of the plan: upstream sync (two-step), then ONE additive chained `web_fetch` module (Jina →
 Firecrawl → Tavily extract; `FIRECRAWL_API_KEY` in `.env`, never the gist), prompt lines in the PMI and LGI research prompts; ScrapingBee stays host-side.
 
+## Instance config change — 2026-10-03 (PREPARED on branch `redis-ownership`; deploy + edit are OWNER-RUN): `sandbox.ownership` → redis
+
+**Status: PREPARED, NOT DEPLOYED** — the owner runs `~/deer-flow-sync-backups/REDIS_OWNERSHIP_RUNBOOK.md` (merge `--ff-only`,
+`make down`, the edit script, `make up`, 3a/3b/smoke, gist refresh) and then records the deploy here (inode, md5, gist time).
+Why: note 20a — several embedded `DeerFlowClient` processes (the WRI research batches: `docker exec … python -`, one per thread)
+share one sandbox backend, and under the per-process `memory` ownership store they adopt and destroy each other's live sandboxes
+(#4206; observed 2 Oct 2026, batches serialized since). The compose/deploy side (redis service + `depends_on` + `services`) is
+the branch; the instance side is this stanza, added by the owner-run, inode-preserving in-place edit
+`python3 ~/deer-flow-sync-backups/config_edit_sandbox_ownership_redis.py` (backup to
+`~/deer-flow-sync-backups/<ts>/config.yaml.pre-redis-ownership`, idempotent, `--revert` removes exactly this stanza, validates the
+new text with the fork's `SandboxConfig` model BEFORE writing and with the fork's full loader inside the gateway after) at the END
+of the existing `sandbox:` block (`bash_command_timeout: 600` is its last key today):
+
+```yaml
+sandbox:
+  use: deerflow.community.aio_sandbox:AioSandboxProvider
+  …
+  bash_command_timeout: 600
+  ownership:                        # 2026-10-03 shared lease store for the embedded multi-process research batches (#4206) — OPS note 20a
+    type: redis
+    redis_url: redis://redis:6379/0
+    renewal_interval_seconds: 30
+    ttl_multiplier: 6
+    key_prefix: deerflow:sandbox:owner
+```
+
+**Values and why.** `type: redis` + `redis_url: redis://redis:6379/0` (the compose service name on the `deer-flow` network — the
+embedded processes run inside the gateway container, so they resolve it identically) — explicit, so nothing is inferred from
+`DEER_FLOW_STREAM_BRIDGE_REDIS_URL` (deliberately unset: it would also flip the stream bridge) and the stream bridge stays
+`memory`. `renewal_interval_seconds: 30` = upstream default: one Lua round trip per owned sandbox every 30 s from a daemon
+thread (`_start_lease_renewal`, independent of `idle_timeout`), negligible. `ttl_multiplier: 6` → lease TTL **180 s** (default
+4 → 120 s): a live owner survives 5 consecutive missed renewals instead of 3 (the batches share the box with 4–6 sandboxes at
+2 CPUs each, and the renewal thread competes for the GIL of a busy embedded process); the only cost is slower orphan cleanup
+after a CRASHED owner — its lease lingers 180 s, a peer's reconciliation must then see the container unowned for a further
+full TTL (`_adoptable_after_grace`) before adopting it, and `idle_timeout` (600 s) before destroying it: ~16 min of a stale
+container, never a live one. `key_prefix` = upstream default, made explicit so the inspection command is documented:
+`sg docker -c "docker exec deer-flow-redis redis-cli --scan --pattern 'deerflow:sandbox:owner:*'"` (values `own:<hostname:uuid>`
+per live sandbox; `del:` while a teardown is in flight). **A 40-minute research turn is unaffected by the TTL**: the owning
+process renews its active sandbox ~80 times during the turn, and warm (released) sandboxes are renewed too, so a peer can
+never adopt them while the owner lives. A redis blip under 150 s costs nothing; a longer outage lapses the lease, which the
+owner re-establishes on its first good renewal (`LAPSED` is re-claimed, only `LOST` — a peer's lease — is surrendered).
+**Fail-closed:** while redis is down, sandbox ACQUIRE raises `OwnershipBackendError` (no sandbox is handed out unowned), so a
+redis outage stalls sandbox turns rather than reopening #4206 — see note 20a. **Capacity is NOT shared:** `replicas: 4` still
+counts THIS process's containers only (AIO keeps process-local accounting; only E2B shares capacity through redis), so the
+un-strip removes the cross-kill, not the host's ceiling — size concurrent batches by host CPU/RAM (each sandbox 2 CPUs / 2 GB).
+**Gist:** refresh the `config.yaml` copy after the edit (procedure above; `.env` never). **Rollback:** the edit script's
+`--revert`, then `make down && make up` (note 20a).
+**Baseline (3 Oct 2026 08:08–08:11 UTC, the memory store, the smoke run ONCE before any deploy): `BASELINE_CROSS_KILL`** —
+process `a` adopted `b`'s live sandbox at its 60-second reconciliation tick (`Adopted container … (age: 33s)`) and its exit-time
+`shutdown()` (`0 active + 2 warm-pool sandbox(es)`) stopped it 9 s before `b`'s turn ended (`docker events`: kill(15) → kill(9) →
+destroy); `b`'s 100-second `sleep` was cut 10 s short yet the model still answered DONE — the reply criterion alone is not a gate,
+the events criterion is. `b` had adopted `a`'s sandbox at its own startup reconciliation. Chronology + artifacts
+(`~/deer-flow-sync-backups/smoke_ownership_logs/1791014920/`): the runbook's Baseline section.
+
 ## WRI chained `web_fetch` (fork-owned, additive)
 
 **What.** `backend/packages/harness/deerflow/community/wri_chained_fetch/` (`tools.py`; tests `backend/tests/test_wri_chained_fetch.py`,
@@ -251,6 +305,13 @@ git commit -m "docs(ops): record YYYY-MM-DD sync (N commits, <upstream-tip>) —
 # 3. Rebuild + verify BEFORE pushing (don't publish a sync you haven't deployed).
 make down && make up
 # verify: gateway logs "Application startup complete", app :2026 → 200, deps + models intact.
+# 3a (since 2026-10-03, note 20a — the redis ownership un-strip): FOUR containers Up incl. `deer-flow-redis` (healthy);
+#    the gateway env has NO DEER_FLOW_STREAM_BRIDGE_REDIS_URL; `sandbox.ownership.type == redis` by instantiation (the 3b
+#    probe below records `sandbox_ownership_type`); the gateway log shows `Sandbox ownership store: redis` only AFTER the
+#    3c sandbox turn (the provider is built lazily — never at boot); then the two-process smoke → `OWNERSHIP_OK`:
+sg docker -c 'docker ps --filter name=deer-flow --format "{{.Names}}: {{.Status}}"'                       # 4x Up, redis + gateway (healthy)
+sg docker -c 'docker exec deer-flow-gateway sh -c "env | grep -c STREAM_BRIDGE_REDIS"'                   # expect 0
+~/deer-flow-sync-backups/smoke_ownership_redis.sh                                                        # expect "summary": "OWNERSHIP_OK"
 
 # 3b. RECONCILE THE DB SCHEMA. SINCE 2026-06-25 (#3706) alembic is wired: `make up` runs a hybrid bootstrap
 #     in the FastAPI lifespan (empty→create_all+stamp head; legacy→create_all backfill + stamp 0001_baseline
@@ -692,38 +753,99 @@ git checkout local-fixes
     pins it. Scale a single worker with **more CPU/RAM**, not more workers.
     (Upstream's shared stream bridge, tracked in #3191, **has since shipped** —
     2026-07-04, `72f033fb`. Raising `GATEWAY_WORKERS` is therefore no longer
-    *impossible*, just not free: it requires standing the redis container back
-    up, `stream_bridge.type: redis`, `sandbox.ownership.type: redis`, and the
-    `redis` uv extra. See note 20a.) The LGI Stage-1 batch is unaffected by
+    *impossible*, just not free: it requires `stream_bridge.type: redis` (plus
+    the `DEER_FLOW_STREAM_BRIDGE_REDIS_URL` env we still omit) on top of the
+    redis container and `sandbox.ownership.type: redis` — and THOSE two are in
+    place since 2026-10-03 for a different reason, see note 20a; the `redis`
+    extra has always been in the image.) The LGI Stage-1 batch is unaffected by
     worker count (it uses `docker exec` → embedded `DeerFlowClient`, bypassing
-    the HTTP/RunManager/StreamBridge path).
+    the HTTP/RunManager/StreamBridge path) — but SEVERAL such processes at once
+    need the shared ownership store: note 20a.
 
-20a. **Why the redis container is stripped from `docker-compose.yaml`.**
+20a. **The redis container: stripped 2026-07-04, PARTIALLY un-stripped 2026-10-03
+    (sandbox OWNERSHIP store only — the stream bridge stays `memory`).**
     Upstream added a `redis:7-alpine` service on **2026-07-04** with #3191
-    (`72f033fb`); we removed it the same day in `08a1a242`. Redis serves
-    exactly two consumers in deer-flow, and **both are cross-process
-    coordination primitives**: (1) the **stream bridge**
-    (`runtime/stream_bridge/redis.py`) — a shared SSE event log so any gateway
-    worker can serve a reconnect/cancel for a run started on another worker;
-    and (2) **sandbox ownership** (`community/aio_sandbox/ownership/redis.py`)
-    — so load-balanced gateway peers don't idle-destroy each other's live
-    sandboxes. **We run one gateway worker in one instance** (note 20), so
-    there is no second process for either to coordinate with. Both config keys
-    default to `memory` and our `config.yaml` sets neither, so the container
-    would have idled unused — while its `depends_on: {redis: service_healthy}`
-    gate still **blocked gateway startup** on it. Stripped: the `redis`
-    service, the `redis-data` volume, the gateway's
-    `DEER_FLOW_STREAM_BRIDGE_REDIS_URL` env, and the `depends_on` gate — plus
-    `redis` from `scripts/deploy.sh`'s `services` list (verified: 0 redis refs
-    there today). **No Python is patched** — this is a compose/deploy-script
-    removal only, and `UV_EXTRAS` stays `postgres` so the redis extra is never
-    installed. Upstream validates
-    this shape itself: the ownership factory logs `Sandbox ownership store:
-    memory (single-instance; ttl=…)` at boot, and #4206 documents memory mode
-    as *"Safe for a SINGLE gateway instance only — multi-worker/load-balanced
-    gateways … must set `sandbox.ownership.type: redis`."* **Un-strip trigger:
-    the day we want >1 gateway worker or >1 instance — nothing else.** Every
-    sync's 3a check asserts `NO redis/provisioner` in the running stack.
+    (`72f033fb`); we removed it the same day in `08a1a242`. Redis serves exactly
+    two consumers in deer-flow, and **both are cross-process coordination
+    primitives**: (1) the **stream bridge** (`runtime/stream_bridge/redis.py`) —
+    a shared SSE event log so any gateway worker can serve a reconnect/cancel
+    for a run started on another worker; and (2) **sandbox ownership**
+    (`community/aio_sandbox/ownership/redis.py`) — so processes sharing one
+    container backend don't adopt and idle-destroy each other's live sandboxes
+    (#4206). We run one gateway worker in one instance (note 20), so (1) stays
+    unneeded and stripped. **The trigger for (2) was reached on 2026-10-02 — not
+    by workers or instances but by the WRI research batches** (PMI reference
+    research, the LGI Stage-1 batch runs the same way): they run SEVERAL embedded
+    `DeerFlowClient` processes at once (`docker exec … python -` inside the
+    gateway container, one per thread), and every such process builds its OWN
+    `AioSandboxProvider` (`get_sandbox_provider()` is process-local;
+    `aio_sandbox_provider.py` `__init__` → `_reconcile_orphans()` +
+    `_start_lease_renewal()`) against the SAME Docker backend. Under
+    `sandbox.ownership.type: memory` each process's startup and 60-second
+    reconciliation (`_cleanup_idle_resources` → `_reconcile_orphans`;
+    `_adoptable_after_grace` short-circuits because `supports_cross_process` is
+    `False`) adopted every running `deer-flow-sandbox-*` container it did not
+    track — its peers' LIVE sandboxes — into its warm pool, then destroyed them on
+    warm-pool eviction (`replicas: 4` is per process), idle expiry (600 s) or its
+    own exit (`shutdown()` destroys every warm entry). Six concurrent research
+    threads quarantined/destroyed each other's sandboxes; the batches have run ONE
+    AT A TIME since. **Un-stripped (branch `redis-ownership` → `local-fixes`,
+    `docker/docker-compose.yaml` + `scripts/deploy.sh`):** the `redis` service
+    exactly as upstream carries it (`redis:7-alpine`, `deer-flow-redis`,
+    appendonly, `redis-cli ping` healthcheck, `redis-data` volume,
+    `restart: unless-stopped`), the gateway's `depends_on: redis: service_healthy`
+    gate, and `redis` in the deploy script's `services` list. **Still stripped on
+    purpose:** the gateway's `DEER_FLOW_STREAM_BRIDGE_REDIS_URL` env — set, it would
+    make the ownership factory *infer* redis AND flip the stream bridge; instead
+    `config.yaml` selects the ownership store EXPLICITLY (the `sandbox.ownership`
+    stanza, "Instance config change — 2026-10-03" above) and the bridge keeps its
+    `memory` default (`stream_bridge` block ABSENT from `config.yaml`, the bridge's
+    own resolver reads only its section + that env). Resolution order in
+    `ownership/factory.py`: an explicit `sandbox.ownership` section wins
+    (`resolve_ownership_config`, lines 49–50), else `stream_bridge.type: redis`
+    infers redis (52–55), else `DEER_FLOW_SANDBOX_OWNERSHIP_REDIS_URL` /
+    `DEER_FLOW_STREAM_BRIDGE_REDIS_URL` infer it (57–60), else memory; the URL is
+    `config.redis_url` → those two envs → `REDIS_URL` → `redis://localhost:6379/0`
+    (line 68). **No Python is patched and no build arg changes**: `backend/Dockerfile`
+    line 74 runs `uv sync --locked --extra redis …` UNCONDITIONALLY (comment at
+    lines 57–59; `test_extension_dependency_sync.py` pins it), so redis-py (7.4.0
+    today) has been in every image we ever built — the July sentence "`UV_EXTRAS`
+    stays `postgres` so the redis extra is never installed" was wrong about the
+    image; `UV_EXTRAS=postgres` itself is correct and unchanged. **The boot-log
+    line** `Sandbox ownership store: redis (ttl=180.0s, renewal=30.0s)` is logged
+    by the ownership factory when an `AioSandboxProvider` is BUILT. The gateway
+    builds its provider LAZILY on its first sandbox acquire (nothing in the
+    lifespan constructs it — the 2 Oct container logged no ownership line in 24 h
+    of uptime), so right after `make up` the gateway log has NO such line; it
+    appears after the first web-UI sandbox turn (3c). Each embedded batch process
+    logs it to its own stderr at start — that is where the multi-process guarantee
+    lives, and what the smoke asserts. **Failure modes (fail-closed by design,
+    `ownership/base.py` lines 36–40):** with redis down or unreachable, `take()`
+    raises `OwnershipBackendError` and the sandbox acquire FAILS
+    (`_publish_ownership` is deliberately not fail-open) — every sandbox turn
+    errors until redis is back; `Redis.from_url` is lazy, so the gateway still
+    boots (the `depends_on` gate only orders container start, `restart:
+    unless-stopped` brings redis back). Reap/adopt paths treat "unknown" as
+    peer-owned (nothing is destroyed); renewal treats it as "retry next tick". A
+    redis flush/restart is survived: a lapsed lease is re-established
+    (`RenewOutcome.LAPSED`, not `LOST`), and reconciliation must see a container
+    unowned for one full TTL before adopting it (`_adoptable_after_grace`).
+    **The 3a check now asserts the OPPOSITE of before:** `deer-flow-redis`
+    present and healthy (4 `Up`), the gateway environment WITHOUT
+    `DEER_FLOW_STREAM_BRIDGE_REDIS_URL`, `sandbox.ownership.type == redis` by
+    instantiation inside the gateway (the 3b probe records
+    `sandbox_ownership_type`), the ownership line in the gateway log after the
+    3c sandbox turn, and the two-process smoke
+    `~/deer-flow-sync-backups/smoke_ownership_redis.sh` → `OWNERSHIP_OK`
+    (sync-time carried-patch check: compose has the redis service and 0
+    `DEER_FLOW_STREAM_BRIDGE_REDIS_URL`). **Rollback:**
+    `python3 ~/deer-flow-sync-backups/config_edit_sandbox_ownership_redis.py --revert`
+    (inode-preserving; the stanza is the only redis consumer — embedded processes
+    pick up `memory` on their next start, the gateway on recreate), then
+    `make down && make up`. The idle redis container is harmless and may stay; to
+    drop it too, `git revert` the un-strip commit on `local-fixes` and redeploy.
+    Keep `stream_bridge` ABSENT from `config.yaml` either way. Runbook:
+    `~/deer-flow-sync-backups/REDIS_OWNERSHIP_RUNBOOK.md`.
 
 21. **The IM-channels subsystem is always wired in, even with zero channels
     configured — and it auto-creates 4 Postgres tables on boot.** As of the
@@ -1337,7 +1459,7 @@ Both categories still conflict, so treat this list as the checklist after every 
 ### Deployment / infrastructure
 | Path | What we carry | Why |
 | --- | --- | --- |
-| `docker/docker-compose.yaml` + `scripts/deploy.sh` | **redis-strip** — no redis/provisioner services | single-instance deployment; `sandbox.ownership.type: memory` is a first-class single-gateway mode (upstream says so itself at startup, `#4206`). **Full rationale + un-strip trigger: note 20a.** Origin: `08a1a242`, 2026-07-04, same day upstream's `72f033fb` (#3191) added the service |
+| `docker/docker-compose.yaml` + `scripts/deploy.sh` | **redis PARTIAL strip** (since 2026-10-03): the `redis` service, its volume, the gateway `depends_on` gate and the deploy `services` entry are back exactly as upstream carries them; still stripped = the gateway's `DEER_FLOW_STREAM_BRIDGE_REDIS_URL` env (stream bridge stays memory); the provisioner stays gated off | the embedded multi-process research batches need the cross-process sandbox ownership store (`#4206`, observed 2026-10-02). **Full rationale, resolution order, failure modes, rollback: note 20a.** History: stripped `08a1a242` 2026-07-04 (same day upstream's `72f033fb`/#3191 added the service); ownership un-strip 2026-10-03 (branch `redis-ownership`) |
 | `backend/Dockerfile` | **readabilipy JS deps** + **Playwright MCP + chromium** (`PLAYWRIGHT_BROWSERS_PATH=/ms-playwright`, ~656 MB) | web-extraction + browser automation for the research path |
 | `.dockerignore` | excludes `backend/.deer-flow/` | keeps the 33 MB runtime memory store out of the build context |
 | `scripts/deploy.sh` | our deploy wrapper | instance-specific |
@@ -2018,7 +2140,8 @@ curl -sS -u <user>:<password> -o /dev/null -w "HTTPS / -> %%{http_code}\n" \
   https://<your-domain>/                                          # expect 200
 
 sg docker -c 'docker ps --filter name=deer-flow \
-  --format "{{.Names}}: {{.Status}}"'                             # expect 3x Up
+  --format "{{.Names}}: {{.Status}}"'                             # expect 4x Up since 2026-10-03: nginx, frontend,
+                                                                  # gateway (healthy), deer-flow-redis (healthy) — note 20a
 
 sg docker -c 'docker logs --since 5m deer-flow-gateway 2>&1 \
   | grep -iE "error|traceback" | grep -v PendingDeprecation | head'
