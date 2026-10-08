@@ -10,7 +10,8 @@ private operator notes — this file is intentionally generic.
 ## Branch model
 
 ```
-main          tracks upstream/main one-to-one (clean mirror, never patched)
+main          a LOCAL MARKER = the upstream commit last merged into local-fixes (moved by update-ref at each
+              sync, never patched, never pushed — origin/main auto-syncs to upstream on GitHub)
 local-fixes   main + local-only commits (UI branding, prompt tweaks, hotfixes)
               ← this is what the server checks out and builds from
 ```
@@ -278,6 +279,10 @@ Backups) are a separate, coarser safety net — check that they are on.
 
 ## Upstream sync workflow
 
+> **Newest sync record:** '### 2026-10-08 sync' (in the dated sync log further down — that log is NOT in date order;
+> search for the date). Rollback images `:pre-sync-20261008` are kept until ~11 Oct; after they are removed, a rollback
+> rebuilds from git tag `pre-sync-20261008` (= `d754dad9`) — and, past this sync, first `alembic downgrade 0028_parked_attempts`.
+
 `local-fixes` is **merge-maintained** (50+ merge commits — it merges `upstream/main`
 directly). **Do NOT rebase it**: a rebase would rewrite 200+ commits and force-push a
 destructive history. Merge instead (this is what every prior sync did).
@@ -307,11 +312,18 @@ destructive history. Merge instead (this is what every prior sync did).
 ```bash
 cd ~/deer-flow
 
-# 1. Fetch upstream + merge into local-fixes (the deploy branch).
+# 0. TWO-STEP, ALWAYS (owner rule): fetch, review the range main..upstream/main (commits, conflicts — incl. SEMANTIC ones
+#    merge-tree cannot see, e.g. duplicate compose keys — migrations, config/.env changes, risk) and REPORT it to the
+#    owner; then WAIT for "go ahead and sync". Pin the reviewed tip SHA in the report.
+#    Pre-flight right before the restart: no embedded LGI/PMI/outreach client (`pgrep -af 'stage1[_]|outreach_discove[r]|
+#    lar_watch_brie[f]'` on the host; `docker top deer-flow-gateway -eo pid,args` — `-eo args` alone FAILS), 0 sandboxes,
+#    the never-set gate variables count 0 (note 20). Windows to avoid: 04:35 UTC (LAR brief), 19:00 UTC discovery (~2.7 h),
+#    and any outreach send.
+# 1. Merge THE REVIEWED, PINNED TIP into local-fixes — NEVER `upstream/main` by name (it moves after the review).
 git fetch upstream main
 git checkout local-fixes
-git merge-tree --write-tree local-fixes upstream/main >/dev/null && echo "clean"  # optional conflict preview
-git merge --no-edit upstream/main                 # resolve conflicts if any (history shows clean)
+git merge-tree --write-tree local-fixes <reviewed-tip-sha> >/dev/null && echo "clean"  # optional conflict preview
+git merge --no-edit <reviewed-tip-sha>             # resolve conflicts if any
 
 # 2. Record the sync in this file: prepend a "Most recent upstream sync" entry
 #    (demote the prior one to "Earlier <date>"), then commit.
@@ -319,6 +331,9 @@ git add docs/OPS.md
 git commit -m "docs(ops): record YYYY-MM-DD sync (N commits, <upstream-tip>) — clean merge"
 
 # 3. Rebuild + verify BEFORE pushing (don't publish a sync you haven't deployed).
+#    BUILD AHEAD while the old stack serves (2026-10-08: ~1 min down instead of ~10): tag the running images
+#    `:pre-sync-<date>` + `git tag pre-sync-<date>`, run `sg docker -c './scripts/deploy.sh build'` (expect "Images built
+#    successfully"), THEN `make down && make up`. `make down` can take up to 90 s (#6347 stop_grace_period 90s).
 make down && make up
 # verify: gateway logs "Application startup complete", app :2026 → 200, deps + models intact.
 # 3a (since 2026-10-03, note 20a — the redis ownership un-strip): FOUR containers Up incl. `deer-flow-redis` (healthy);
@@ -2256,7 +2271,7 @@ sg docker -c 'docker logs --since 5m deer-flow-gateway 2>&1 \
   `alembic downgrade 0028_parked_attempts` (`20261008-sync/rollback_downgrade_to_0028.py`, UNTESTED), then reset to the tag,
   re-tag the `:pre-sync-20261008` images and `deploy.sh start`. Never run `make config-upgrade`, `make start` or `make dev` here.
 
-### 2026-10-02 sync — 82 commits, merge `fd295344` (`main`@`63e399f2`; 2.2.0-dev, config_version latest still 50)
+### 2026-10-02 sync — 82 commits, merge `fd295344` (`main`@`63e399f2`; 2.2.0-dev, config_version latest still 50) — DEPLOYED + verified 2 Oct (see its 3a bullet)
 - **MERGED 2026-10-02 06:18 UTC on the owner's "go ahead and sync" (parents `0895a30f` + `63e399f2`), `git merge --no-edit` CLEAN; POST-MERGE VERIFIED on the working tree: keepers DeerFlow 3/3, tally WRI AI 41 en / 40 zh, Dockerfile / compose / deploy.sh / .dockerignore / schema_sync.py byte-identical to pre-merge, compose redis refs 0, auth pages 0 `deerflow.tech`, migrations 0027 + 0028 present, `#6013` helper present, tree clean. Deploy (`make down && make up`) is owner-run and PENDING; 3a/3b/3c below are filled after it. ⚠ Until then local-fixes is MERGED BUT UNDEPLOYED and UNPUSHED (push only after the deploy verification, runbook step 4). The fork-owned chained `web_fetch` module (fetch-plan item 3) is merged separately before the same rebuild — see its own entry.**
 - **Forecast (read-only, before any merge): merge-tree exit 0 (tree `87746da8`), ZERO conflicts. TWO MIGRATIONS (first since 0026):
   `0027_notification_deliveries` (new table, `has_table`-guarded) → `0028_parked_attempts` (adds `parked_attempts INTEGER NOT NULL`,
