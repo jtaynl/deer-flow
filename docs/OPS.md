@@ -357,7 +357,10 @@ sg docker -c 'docker logs --since 3m deer-flow-gateway 2>&1 | grep -iE "error|tr
 #           subagent; expect `{"summary": "ALL_OK"}`.
 #       (3) smoke_language_inside.py — the <language> rule: EN→EN, ZH→ZH on qwen + deepseek, EN-then-ZH turn
 #           switch on one thread; expect `{"summary": "LANG_OK"}`.
-for f in smoke_pw3_inside smoke_embedded_inside smoke_language_inside; do
+#       (1b) smoke_mcp_pool_inside.py — since 2026-10-08 (#6133/#6435 rewrote the stdio MCP session pool): DeerFlow's
+#           OWN MCP path, two calls on one thread share one browser session; expect `MCP_POOL_OK`. If it fails while
+#           PW_STRONG passes, HOLD: agent browsing would silently fall back to Jina.
+for f in smoke_pw3_inside smoke_mcp_pool_inside smoke_embedded_inside smoke_language_inside smoke_firecrawl_inside; do
   sg docker -c 'docker exec -i -w /app/backend -e PYTHONPATH=/app/backend deer-flow-gateway .venv/bin/python -' < ~/deer-flow-sync-backups/$f.py
 done
 #       (4) smoke_models_inside.py — ONLY after a change to the `models:` list: chats the changed model with thinking
@@ -372,8 +375,8 @@ git push origin local-fixes
 # 4b. If the sync (or its follow-ups) changed config.yaml / extensions_config.json, refresh the gist copies
 #     ("Off-box copies of the instance files" above) and verify by md5.
 
-# 5. Keep the fork's main aligned (safe fast-forward only).
-git checkout main && git merge --ff-only upstream/main && git push origin main && git checkout local-fixes
+# 5. Move the local main MARKER to the merged upstream tip (no checkout, NO push — see the warning above; 2026-10-08).
+git merge-base --is-ancestor main <merged-tip> && git update-ref refs/heads/main <merged-tip> <old-main>
 ```
 
 **Never force-push.** With the merge workflow no `--force` is needed on any branch;
@@ -748,7 +751,8 @@ git checkout local-fixes
     `extensions_config.json` and see those errors, the fix is now
     automatic; no config change needed.
 
-20. **`GATEWAY_WORKERS` must stay at 1 — do NOT raise it.** The gateway holds
+20. **`GATEWAY_WORKERS` must stay at 1 — do NOT raise it** (and never set `WEB_CONCURRENCY`, `DEER_FLOW_MULTI_INSTANCE` or a
+    `deployment.multi_instance` block — upstream #6328's multi-instance startup gate, 2026-10-08). The gateway holds
     run state **in-process and per-worker**: `RunManager._runs` (each run's
     `asyncio.Task` + abort event) and the `MemoryStreamBridge` (per-run SSE
     event log) live in one worker's memory, and there is **no shared
@@ -1528,6 +1532,11 @@ factually reference `bytedance/deer-flow`, and their nav entries are already rem
   and re-run the 3b probe (`language_overlay_rendered_count: 1`). Backup copies: `~/deer-flow-sync-backups/*/config.yaml`.
 
 ### Absorbed upstream (no longer carried)
+- `stop_grace_period: 30s` on the gateway (`809dbd67`, June; never listed in the carried table) — absorbed **2026-10-08**
+  by upstream `#6347` (`063383d9`): `stop_grace_period: 90s` + uvicorn `--timeout-graceful-shutdown 10` (shutdown now needs
+  ~71 s incl. the 30 s memory flush; 30 s would SIGKILL it). The TEXTUAL merge kept BOTH keys and compose refused the file
+  (`mapping key "stop_grace_period" already defined`) — a merge-tree-invisible conflict; ours deleted in merge `523e5acd`.
+  `make down` and gateway restarts can now take up to 90 s.
 - `--cap-add=FOWNER` in `community/aio_sandbox/local_backend.py` (`47fbb879`, 2026-08-28) — absorbed
   **2026-09-05**: upstream `#5163` (`83cb6767`) adds CAP_FOWNER to the default startup allowlist with a
   regression test + CI smoke against the exact 1.11.0 image. The clean merge briefly left a DUPLICATE
@@ -2209,6 +2218,40 @@ sg docker -c 'docker logs --since 5m deer-flow-gateway 2>&1 \
 - **Security:** #4987 restores sanitization in custom streamdown rehype chains (frontend render path) — taken.
 - **3a/3b:** clean boot, :2026 → 200, extensions_config.json md5 UNCHANGED (RW-mount watch), sentinel in sync, all invariants by instantiation (consolidation F / eviction confidence / authz F / heartbeat F / retrieval '' / plugins [] / subagent_batches F / head 0016).
 - **3c:** PW_STRONG PASS (first); chat×3 kimi/qwen/deepseek OK; sandbox bash `smoke-42` + present_files OK; subagent OK; thread-id 64 OK / 65 rejected; re-skin login 200 + WRI / 0 deerflow.tech / api 401; gateway log clean. (Smoke params per 08-24 lesson: recursion_limit 100, dot-free thread ids.)
+
+### 2026-10-08 sync — 212 commits, merge `523e5acd` (`main`@`89c9f087`; 5 migrations 0028 → 0033)
+- **MERGED 2026-10-08 08:51 UTC on the owner's "go ahead and sync now"** (parents `d754dad9` + `89c9f087` — the tip PINNED by
+  the review). Reviewed first by a 7-agent read-only workflow (`wf_6e9f04c9-fab`: infra / db / config / runtime / frontend
+  AMBER, security GREEN, plan). Prepared files + the full plan: `~/deer-flow-sync-backups/20261008-sync/` (SYNC_PLAN.md;
+  sha256 c938e02d a823fc40 937c0a1a 30803a1a b6e50785 607fd813).
+- **Conflicts:** 2 textual, the locales: hunk A (#6378 scheduled-task form) → THEIRS; hunk B (#6081 QQ channel) → OURS
+  buzz/telegram + THEIRS qq; plus 5 NEW 'DeerFlow' strings per locale from #6378 → "WRI AI" → keepers 3/3, **tally 45 en /
+  44 zh**. 1 SEMANTIC (invisible to merge-tree): duplicate `stop_grace_period` in docker-compose.yaml → ours removed (see
+  Absorbed upstream). `frontend/tests/unit/app/scheduled-tasks-page.dom.test.tsx` patched for the WRI wording.
+- **Build** 08:52–08:57 UTC while the old stack served (`✓ Compiled successfully in 60s`). Rollback marks: git tag and image
+  tags `pre-sync-20261008` (= d754dad9). **Restart** 08:57:38–08:58:39 UTC (make down 32 s), ≈1 min down. ⚠ The pre-flight
+  `docker top deer-flow-gateway -eo args` FAILS ("Couldn't find PID field") — use `-eo pid,args`; the host driver check (0)
+  and the sandbox count (0) covered it this time.
+- **Verified:** 4× Up (gateway + redis healthy); boot `revision=0028_parked_attempts -> upgrade head (0033_batch_result_artifact)`
+  + five `Running upgrade` lines in ~1 s; startup complete; 0 errors; STREAM_BRIDGE_REDIS env 0; `-H 'Host: localhost:2026'`
+  → 200 (nginx #6158 now 301s a bare `127.0.0.1` Host — use that header in 3a); Host app.worldresearch.org `/`, `/login`,
+  `/setup` → 200 (WRI, 0 deerflow.tech), `/api/models` → 401; public → Caddy basic-auth 401 (expected); config.yaml
+  `83cdcc63` / extensions_config.json `efba0945` UNCHANGED (inode 536614) → no gist refresh; `OWNERSHIP_OK`. 3b sentinel
+  "schema in sync"; probe ok:true, fails [] (pin → 0033, old copy `probe_3b_inside.py.pre-0033`; ownership redis;
+  pii_redaction False; language overlay 1); jwt 2.15.0 / urllib3 2.8.0. Battery PW_STRONG PASS → MCP_POOL_OK (NEW, 23 tools)
+  → ALL_OK → LANG_OK → FIRECRAWL_OK. LGI embedded smoke (Singapore, Norway, Morocco; concurrency 3; qwen3.7-plus;
+  `stage1_outputs_smoke_20261008/`, 09:05–09:57 UTC): **Failures 0, Exceptions 0** — Singapore 558 s, Morocco 979 s; Norway attempt 1
+  on qwen3.7-plus hit `GraphRecursionError` (limit 500) after 2185 s — the KNOWN qwen loop (6 countries on 5 Oct, 13 in the
+  September forecast run, 8 in August, all pre-sync) — the ladder retried on deepseek-v4-pro → OK; turn1 + turn2 OK ×3, 0
+  OwnershipBackendError / stop-timeout lines, 0 sandboxes and 0 owner keys after. One sandbox start logged 'Port 8080 rejected
+  by Docker (already allocated), retrying with next port' — recovered; such lines appear in every past production run.
+  NOT done: a web-UI sandbox turn (no UI login here) — the gateway process builds its ownership provider lazily, so its log
+  shows `Sandbox ownership store: redis` after the first web chat that runs code; OWNERSHIP_OK proved the store on this build.
+- **Security (no urgency — none reachable here):** pyjwt 2.13→2.15 (14 advisories), urllib3 2.7→2.8 (3), next 16.3.3→16.3.6
+  (CRITICAL next/og RCE; sharp librsvg), source-map-js 1.2.2.
+- **⚠ Rollback is no longer code-only:** the DB is at 0033 and the pre-sync build refuses a newer revision → first
+  `alembic downgrade 0028_parked_attempts` (`20261008-sync/rollback_downgrade_to_0028.py`, UNTESTED), then reset to the tag,
+  re-tag the `:pre-sync-20261008` images and `deploy.sh start`. Never run `make config-upgrade`, `make start` or `make dev` here.
 
 ### 2026-10-02 sync — 82 commits, merge `fd295344` (`main`@`63e399f2`; 2.2.0-dev, config_version latest still 50)
 - **MERGED 2026-10-02 06:18 UTC on the owner's "go ahead and sync" (parents `0895a30f` + `63e399f2`), `git merge --no-edit` CLEAN; POST-MERGE VERIFIED on the working tree: keepers DeerFlow 3/3, tally WRI AI 41 en / 40 zh, Dockerfile / compose / deploy.sh / .dockerignore / schema_sync.py byte-identical to pre-merge, compose redis refs 0, auth pages 0 `deerflow.tech`, migrations 0027 + 0028 present, `#6013` helper present, tree clean. Deploy (`make down && make up`) is owner-run and PENDING; 3a/3b/3c below are filled after it. ⚠ Until then local-fixes is MERGED BUT UNDEPLOYED and UNPUSHED (push only after the deploy verification, runbook step 4). The fork-owned chained `web_fetch` module (fetch-plan item 3) is merged separately before the same rebuild — see its own entry.**
