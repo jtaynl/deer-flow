@@ -2245,8 +2245,10 @@ sg docker -c 'docker logs --since 5m deer-flow-gateway 2>&1 \
   September forecast run, 8 in August, all pre-sync) — the ladder retried on deepseek-v4-pro → OK; turn1 + turn2 OK ×3, 0
   OwnershipBackendError / stop-timeout lines, 0 sandboxes and 0 owner keys after. One sandbox start logged 'Port 8080 rejected
   by Docker (already allocated), retrying with next port' — recovered; such lines appear in every past production run.
-  NOT done: a web-UI sandbox turn (no UI login here) — the gateway process builds its ownership provider lazily, so its log
-  shows `Sandbox ownership store: redis` after the first web chat that runs code; OWNERSHIP_OK proved the store on this build.
+  Web UI: the owner's chat at 12:13 UTC (thread 356e0ff6…) — thread created, 2 runs, `runs/stream` 200, memory update queued,
+  every request 200, 0 errors → the web run/persist path is verified. It ran no code, so the gateway's lazy ownership provider
+  is still unbuilt: its log shows `Sandbox ownership store: redis` after the first web chat that runs code (OWNERSHIP_OK
+  already proved the store on this build).
 - **Security (no urgency — none reachable here):** pyjwt 2.13→2.15 (14 advisories), urllib3 2.7→2.8 (3), next 16.3.3→16.3.6
   (CRITICAL next/og RCE; sharp librsvg), source-map-js 1.2.2.
 - **⚠ Rollback is no longer code-only:** the DB is at 0033 and the pre-sync build refuses a newer revision → first
