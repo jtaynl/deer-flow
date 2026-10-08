@@ -282,6 +282,8 @@ Backups) are a separate, coarser safety net — check that they are on.
 > **Newest sync record:** '### 2026-10-08 sync' (in the dated sync log further down — that log is NOT in date order;
 > search for the date). Rollback images `:pre-sync-20261008` are kept until ~11 Oct; after they are removed, a rollback
 > rebuilds from git tag `pre-sync-20261008` (= `d754dad9`) — and, past this sync, first `alembic downgrade 0028_parked_attempts`.
+> Roll back by `git switch --detach pre-sync-20261008` — NEVER `git reset` or force-push local-fixes; afterwards record the
+> rollback on local-fixes with a normal commit (`git switch local-fixes`).
 
 `local-fixes` is **merge-maintained** (50+ merge commits — it merges `upstream/main`
 directly). **Do NOT rebase it**: a rebase would rewrite 200+ commits and force-push a
@@ -325,8 +327,9 @@ git checkout local-fixes
 git merge-tree --write-tree local-fixes <reviewed-tip-sha> >/dev/null && echo "clean"  # optional conflict preview
 git merge --no-edit <reviewed-tip-sha>             # resolve conflicts if any
 
-# 2. Record the sync in this file: prepend a "Most recent upstream sync" entry
-#    (demote the prior one to "Earlier <date>"), then commit.
+# 2. Record the sync in this file: add a '### YYYY-MM-DD sync — N commits, merge <sha> (`main`@<tip>)' entry ABOVE the
+#    newest one in the dated sync log, and UPDATE the pointer at the top of this section (newest record; rollback git tag +
+#    image tags and how long the images are kept; any alembic downgrade target a rollback needs). Then commit.
 git add docs/OPS.md
 git commit -m "docs(ops): record YYYY-MM-DD sync (N commits, <upstream-tip>) — clean merge"
 
@@ -335,7 +338,9 @@ git commit -m "docs(ops): record YYYY-MM-DD sync (N commits, <upstream-tip>) —
 #    `:pre-sync-<date>` + `git tag pre-sync-<date>`, run `sg docker -c './scripts/deploy.sh build'` (expect "Images built
 #    successfully"), THEN `make down && make up`. `make down` can take up to 90 s (#6347 stop_grace_period 90s).
 make down && make up
-# verify: gateway logs "Application startup complete", app :2026 → 200, deps + models intact.
+# verify: gateway logs "Application startup complete"; the app answers
+#   curl -s -o /dev/null -w '%{http_code}\n' -H 'Host: localhost:2026' http://127.0.0.1:2026/      # expect 200
+#   (a bare 127.0.0.1 Host now gets 301 on purpose — nginx #6158, 8 Oct 2026 — that is NOT a failure); deps + models intact.
 # 3a (since 2026-10-03, note 20a — the redis ownership un-strip): FOUR containers Up incl. `deer-flow-redis` (healthy);
 #    the gateway env has NO DEER_FLOW_STREAM_BRIDGE_REDIS_URL; `sandbox.ownership.type == redis` by instantiation (the 3b
 #    probe below records `sandbox_ownership_type`); the gateway log shows `Sandbox ownership store: redis` only AFTER the
@@ -1562,7 +1567,7 @@ factually reference `bytedance/deer-flow`, and their nav entries are already rem
   `f9b70713` added `_make_file_sandbox_readable()` plus a clean `SandboxProvider` opt-out; our follow-up
   `f83611f1` removed the redundant inline chmod).
 
-Most recent upstream sync: **2026-08-12** — **32 commits (`480a3757`→`88252e9b`), 2 conflicts (i18n locales), ⚠ FIRST MIGRATION SINCE JUNE (`0011_mcp_tasks`), ~120 files.** Merges `3024bff7` + Dockerfile fix. Reviewed by a 20-agent workflow (7 areas, all MEDIUMs adversarially confirmed).
+(History — sync of 2026-08-12; the newest record is the dated log, see the pointer at the top of 'Upstream sync workflow'.) Sync: **2026-08-12** — **32 commits (`480a3757`→`88252e9b`), 2 conflicts (i18n locales), ⚠ FIRST MIGRATION SINCE JUNE (`0011_mcp_tasks`), ~120 files.** Merges `3024bff7` + Dockerfile fix. Reviewed by a 20-agent workflow (7 areas, all MEDIUMs adversarially confirmed).
 
 - **`0011_mcp_tasks` applied cleanly at boot** (`branch=versioned -> upgrade head (0011_mcp_tasks)` in the log): pure additive CREATE (one table + 7 indexes, idempotent, linear from `0010`). The durable-task runtime behind it is **gated `mcp_tasks.enabled` default false** (== example, silent-default satisfied; verified by instantiation) with zero write callers and an empty driver registry — table exists, 0 rows. `checkpoint-postgres` 3.1.0→3.1.1 verified **schema-identical against the library** (10-entry MIGRATIONS list at both tags). **3b head expectation is now `0011_mcp_tasks`.**
 - **i18n: the graft was BUILD-MANDATORY, not cosmetic** — `#4703` added 11 REQUIRED `Translations` fields (auto-merged); the 2 conflicts were adjacent-line buzz/telegram insertions (keep-OURS + graft). **4 new values rebranded** (`changeAppDescription` en/zh, buzz description en/zh) → **tally now 32 en / 31 zh**; ALSO patched the two DeerFlow literals `#4727` hard-coded into `translations.test.ts` — the 2026-08-05 dangling-test lesson applied AT MERGE TIME.
@@ -2268,7 +2273,7 @@ sg docker -c 'docker logs --since 5m deer-flow-gateway 2>&1 \
 - **Security (no urgency — none reachable here):** pyjwt 2.13→2.15 (14 advisories), urllib3 2.7→2.8 (3), next 16.3.3→16.3.6
   (CRITICAL next/og RCE; sharp librsvg), source-map-js 1.2.2.
 - **⚠ Rollback is no longer code-only:** the DB is at 0033 and the pre-sync build refuses a newer revision → first
-  `alembic downgrade 0028_parked_attempts` (`20261008-sync/rollback_downgrade_to_0028.py`, UNTESTED), then reset to the tag,
+  `alembic downgrade 0028_parked_attempts` (`20261008-sync/rollback_downgrade_to_0028.py`, UNTESTED), then `git switch --detach` to the tag (never reset/force-push local-fixes),
   re-tag the `:pre-sync-20261008` images and `deploy.sh start`. Never run `make config-upgrade`, `make start` or `make dev` here.
 
 ### 2026-10-02 sync — 82 commits, merge `fd295344` (`main`@`63e399f2`; 2.2.0-dev, config_version latest still 50) — DEPLOYED + verified 2 Oct (see its 3a bullet)
