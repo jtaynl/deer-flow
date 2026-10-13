@@ -90,6 +90,35 @@ pin to the source file's inode at container creation. Most editors
 creates a new inode. The container keeps seeing the old content until it's
 recreated.
 
+## Instance config change — 2026-10-13 (DEPLOYED 04:42–04:51 UTC on the owner's instruction): database login `doadmin` → `deerflow_app`
+Why: a doadmin password of THIS cluster was printed into a local agent transcript on 12 Oct 2026 (cause fixed); the owner
+approved changing it ("you can change password of DeerFlow's database", 13 Oct). DigitalOcean manages `doadmin` and may put
+back its stored password if it is changed in SQL, so DeerFlow moved to its own login and the owner resets doadmin in the DO
+panel afterwards (the supported way; nothing on this host needs the new doadmin password). WRI Intelligence's production DB is
+ANOTHER cluster with its own doadmin password (host + keyed-hash comparison, 13 Oct) — untouched.
+How: `~/deer-flow-sync-backups/20261013-dbuser/switch_db_user.py` (reviewed twice: wf_983b609b-0d8 fix-first → fixed;
+wf_b7caf9cd-ac6 'go'): with the stack STOPPED — new role `deerflow_app` (password sent as a SCRAM-SHA-256 verifier), doadmin
+a member (INHERIT, SET), USAGE+CREATE on schema public, the 33 tables (+ their owned sequences) given to deerflow_app, the new
+login checked (owns everything in public, schema rights, a rolled-back DDL probe), `.env` DATABASE_URL rewritten IN PLACE (same
+inode and mode; PGSSLMODE untouched). Backup of .env: env.before (mode 600) in that folder — shred it after the reset.
+Restart: `make down` → apply → `./scripts/deploy.sh start` (no rebuild; HEAD differs from the deployed tree only in docs).
+Checks (13 Oct): pre-checks clean (4 containers, no sandboxes, no embedded batch; the 04:35 LAR brief had ended 04:42,
+rc=0); `make down` 04:42:58–04:44:29; apply 04:44:33 (33 tables, 0 standalone sequences, 0 other objects; deerflow_app owns
+all 35 objects incl. 2 owned sequences; alembic 0033_batch_result_artifact; DDL probe ok; .env same inode/mode);
+`deploy.sh start` 04:44:45 → 4× Up, gateway healthy 04:45:18 (≈ 2½ min down); 'Application startup complete'; HTTP 200;
+schema_sync 'in sync'; probe_3b ok, fails []; sessions on defaultdb = deerflow_app ×8 (no doadmin); smokes PW_STRONG PASS,
+MCP_POOL_OK, ALL_OK, LANG_OK, FIRECRAWL_OK, OWNERSHIP_OK (redis); gateway log clean since the restart.
+Owner's step (after a soak through the 14 Oct 04:35 UTC LAR brief, and after a read-only check as deerflow_app that no
+doadmin session exists): DigitalOcean panel → Databases → DeerFlow's cluster → Users & Databases → doadmin → Reset password;
+then refresh the local-drive copy of `.env`; then shred env.before.
+Rollback BEFORE the owner's reset: make down → `switch_db_user.py restore-env` → (`undo-db` to give the tables back) →
+deploy.sh start. AFTER the reset a rollback needs the new doadmin password from the owner.
+Consequences: a future migration with CREATE EXTENSION / CREATE SCHEMA, or `database.postgres_schema`, fails the boot-time
+alembic run as deerflow_app — flag such migrations in the sync runbook's migration-diff step (the owner supplies doadmin). The
+'clean slate' recipe below needs a doadmin DSN from the owner and afterwards `GRANT USAGE, CREATE ON SCHEMA public TO
+deerflow_app`. `/etc/environment` (root, 644) still exports the OLD doadmin DSN (public host) to every shell and cron job —
+dead after the reset; ask the owner to delete those DATABASE_* lines (nothing scheduled uses them).
+
 ## Instance config change — 2026-10-01 16:56 UTC: `deepseek-v4-pro` `max_tokens` 32768 → 65536
 
 Owner-approved and owner-run (the classifier refuses config edits from the session). Why: the PMI contract/3 pilot (one research turn,
