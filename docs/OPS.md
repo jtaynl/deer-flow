@@ -309,7 +309,8 @@ Backups) are a separate, coarser safety net — check that they are on.
 ## Upstream sync workflow
 
 > **Newest sync record:** '### 2026-10-08 sync' (in the dated sync log further down — that log is NOT in date order;
-> search for the date). Rollback images `:pre-sync-20261008` are kept until ~11 Oct; after they are removed, a rollback
+> search for the date). Rollback images `:pre-sync-20261008` are kept until after the 7 Nov 2026 LGI release (decided 11 Oct: October Run 1 is the
+> first full 42-country run since this sync; no DeerFlow sync after ~26 Oct); after they are removed, a rollback
 > rebuilds from git tag `pre-sync-20261008` (= `d754dad9`) — and, past this sync, first `alembic downgrade 0028_parked_attempts`.
 > Roll back by `git switch --detach pre-sync-20261008` — NEVER `git reset` or force-push local-fixes; afterwards record the
 > rollback on local-fixes with a normal commit (`git switch local-fixes`).
