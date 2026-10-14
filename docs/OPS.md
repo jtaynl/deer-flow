@@ -118,6 +118,12 @@ alembic run as deerflow_app — flag such migrations in the sync runbook's migra
 'clean slate' recipe below needs a doadmin DSN from the owner and afterwards `GRANT USAGE, CREATE ON SCHEMA public TO
 deerflow_app`. `/etc/environment` (root, 644) still exports the OLD doadmin DSN (public host) to every shell and cron job —
 dead after the reset; ask the owner to delete those DATABASE_* lines (nothing scheduled uses them).
+**14 Oct 2026 — DONE.** Soak passed: the 04:35 LAR brief ran on deerflow_app (rc=0, 350 s, email sent); read-only as
+deerflow_app: no doadmin session, deerflow_app ×10; gateway log clean for 24 h. The owner reset doadmin in the DO panel and
+refreshed the local-drive `.env` copy (~05:15 UTC). Verified: the OLD doadmin password is REJECTED on DeerFlow's cluster
+(dbaas-db-2714274); DeerFlow unaffected (4× Up, healthy); the WRI site's cluster (dbaas-db-4572334) untouched — its doadmin login
+still works (read-only check). `env.before` shredded. ⚠ The older on-box backups `~/deer-flow-sync-backups/*/.env` still carry the
+OLD doadmin DSN (now dead): NEVER restore `DATABASE_URL` from them — a rollback keeps deerflow_app's DSN from the live `.env`.
 
 ## Instance config change — 2026-10-01 16:56 UTC: `deepseek-v4-pro` `max_tokens` 32768 → 65536
 
