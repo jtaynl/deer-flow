@@ -1533,9 +1533,15 @@ Expect two JSON-RPC response lines — an `initialize` ack with
 Authoritative list — regenerate the raw file set with
 `git diff --name-only upstream/main...local-fixes`.
 
-**No runtime BUG hotfixes are carried** (the two we once had were absorbed upstream — see
-"Absorbed" below). Everything carried today is **deployment config** or the **WRI re-skin**.
-Both categories still conflict, so treat this list as the checklist after every sync.
+**One runtime behaviour patch is carried (since 2026-10-14): the revert of upstream `80a71b09`** (see "Runtime
+behaviour" below). The two bug hotfixes we once had were absorbed upstream (see "Absorbed" below). Everything else
+carried is **deployment config** or the **WRI re-skin**. All of it can conflict, so treat this list as the checklist
+after every sync.
+
+### Runtime behaviour
+| Path | What we carry | Why |
+| --- | --- | --- |
+| `agents/middlewares/loop_detection_middleware.py` (+ `backend/tests/test_loop_detection_middleware.py`, one README line, one middleware `AGENTS.md` line) | **upstream `80a71b09` (#6804) REVERTED** (`05883116`, 2026-10-14): the two warn-level loop messages read "…Stop calling tools and produce your final answer now…" again; file + tests byte-identical to `89c9f087` | #6804's "Stop calling <tool> and wrap up … first write what you have collected so far to that file" made qwen3.7-plus write a file after the per-tool frequency warning and then resume researching → `GraphRecursionError` at 500 (Suez, 14 Oct). Research tasks here answer inline and run without subagents. **After every sync:** `git log <old-main>..<new-main> -- backend/packages/harness/deerflow/agents/middlewares/loop_detection_middleware.py`; both `_WARNING_MSG` and `_TOOL_FREQ_WARNING_MSG` must still contain "Stop calling tools and produce your final answer now"; if upstream edits those lines again, keep ours and re-run the qwen3.7-plus chokepoint smoke. Drop the patch only after that smoke passes with upstream's text. |
 
 ### Deployment / infrastructure
 | Path | What we carry | Why |
@@ -2274,6 +2280,72 @@ sg docker -c 'docker logs --since 5m deer-flow-gateway 2>&1 \
 - **Security:** #4987 restores sanitization in custom streamdown rehype chains (frontend render path) — taken.
 - **3a/3b:** clean boot, :2026 → 200, extensions_config.json md5 UNCHANGED (RW-mount watch), sentinel in sync, all invariants by instantiation (consolidation F / eviction confidence / authz F / heartbeat F / retrieval '' / plugins [] / subagent_batches F / head 0016).
 - **3c:** PW_STRONG PASS (first); chat×3 kimi/qwen/deepseek OK; sandbox bash `smoke-42` + present_files OK; subagent OK; thread-id 64 OK / 65 rejected; re-skin login 200 + WRI / 0 deerflow.tech / api 401; gateway log clean. (Smoke params per 08-24 lesson: recursion_limit 100, dot-free thread ids.)
+
+### 2026-10-14 sync — 202 commits, merge `b448058b` (`main`@`4e9f6c68`; 8 migrations 0033 → 0041)
+- **MERGED 2026-10-14 ~06:13 UTC on the owner's "go ahead and sync"** (after "any problem if we go ahead and sync now"; parents
+  `16f940ed` + `4e9f6c68` — the tip PINNED by the review; upstream had moved to `000b5d8c`: its 3 newer commits (IM channel
+  leases + migration 0042, E2B/BoxLite timeout marker, tencent-wsa) wait for the next sync after 7 Nov). Reviewed first by a
+  6-agent read-only workflow (`wf_5b0ffd3c-0e3`: security GREEN; migrations, runtime, usage, re-skin AMBER; no RED). Prepared
+  files + the full plan: `~/deer-flow-sync-backups/sync-4e9f6c68/` (SYNC_PLAN.md, SHA256SUMS; resolved files, db_check, the
+  0033 downgrade helper, rendered DDL, review JSON; before/after db checks, build/start logs, smoke battery log).
+- **Conflicts:** 2 textual, the re-skin: `(auth)/login/page.tsx` → upstream's `useEffect, useContext, useState` import, the
+  next-themes import dropped (blob `4c504e49`); `workspace/settings/settings-dialog.tsx` → upstream's typed items list, the
+  admin-only Users entry and the activeId fallback, minus the About item (blob `75369b10`; 9 `dynamic(`). Auto-merged blobs as
+  predicted (layouts, agents/api.ts, locales — keepers 3/3, tally 45 en / 44 zh). Carried patches unchanged (Dockerfile,
+  .dockerignore, schema_sync, wri_chained_fetch). The merge commit carries the attribution lines (amended before any push).
+- **Build** ~06:13–06:17 UTC while the old stack served (`✓ Compiled successfully in 68s`; 163 static pages). deploy.sh
+  generated `backend/.deer-flow/.credentials_key` (600 brandon; NEW secret file — never printed, never in the gist or .env;
+  if ever set by hand only a Fernet key: a malformed DEER_FLOW_CREDENTIALS_KEY stops the gateway at boot). Rollback marks: git
+  tag + image tags `pre-sync-20261014` (= `16f940ed`; gateway `c3f50058`, frontend `b97388a7`), kept with `:pre-sync-20261008`
+  until after 7 Nov. **Restart** 06:19:04–06:21:15 UTC (make down 92 s), ≈2 min down.
+- **Pre-flight (as deerflow_app, inside the old gateway):** alembic 0033, 33 tables, 0 not owned, none of the new tables/columns,
+  run_events 11,714 rows / 77 threads, all sessions idle, no locks.
+- **Verified:** 4× Up (gateway + redis healthy); boot `revision=0033_batch_result_artifact -> upgrade head
+  (0041_im_notice_preferences)` + eight `Running upgrade` lines in ~1 s AS deerflow_app (doadmin not needed); startup complete;
+  env STREAM_BRIDGE 0, CREDENTIALS_KEY + AUTH_TRUSTED_PROXIES 2; `-H 'Host: localhost:2026'` → 200; app.worldresearch.org `/`,
+  `/login`, `/setup` → 200 (WRI, 0 deerflow.tech), `/api/models` → 401; config.yaml `83cdcc63` / extensions_config.json
+  `efba0945` UNCHANGED (inode 536614) → no gist refresh; `OWNERSHIP_OK`. 3b: sentinel "schema in sync"; probe ok:true, fails []
+  (pin → 0041, old copy `probe_3b_inside.py.pre-0041`; ownership redis; pii_redaction False; consolidation False; language
+  overlay 1; 6 models; bash timeout 600; authorization False). db_check after: 37 tables, all owned by deerflow_app, the 4 tables
+  + 4 columns present, watermark rows 77 = threads 77. Battery PW_STRONG PASS → MCP_POOL_OK (23 tools) → ALL_OK → LANG_OK →
+  FIRECRAWL_OK. Web UI: the owner's code turn ('use Python to work out 17 × 23' → 391, 16 s) with `Sandbox ownership store:
+  redis`; its sandbox start logged the known 'Port 8080/8081 rejected by Docker (already allocated), retrying with next port'
+  (ports held by the smoke's sandboxes) → started on 8082.
+- **LGI embedded smoke** — the 3-country recipe could NOT run (Stage 0 `recent_readings` absent for all 42 until the LGI lead
+  re-runs Stage 0 — run_log item 5; never a sync step), so the chokepoint substitute: Panama Canal, Suez Canal, Strait of Hormuz,
+  concurrently, qwen3.7-plus, `--no-fallback`, `stage1_outputs_smoke_20261014_chokepoint/` (06:28–07:00 UTC): Panama [OK] 1937 s,
+  Hormuz [OK] 640 s; Suez `GraphRecursionError` (limit 500) after 1350 s; the retry model's re-run (qwen3.8-max,
+  `fallback/`) also failed (3480 s; fetch thrash — Maersk 404s, Jina 503/timeouts, `pip install pypdf` — and it was never warned).
+  **ROOT CAUSE (proven, ~08:30 UTC): upstream `80a71b09` (#6804), in the pinned range** — the warn-level loop messages changed from
+  "Stop calling tools and produce your final answer now" to "Stop calling <tool> and wrap up … first write what you have collected
+  so far to that file". Replaying the per-tool frequency check over the thread checkpoints (warn 30 / hard 50 in the last 50 calls;
+  the warning is a transient HumanMessage, never in the checkpoint): 1 Oct Suez warned at 36 calls → 0 further calls → answer;
+  14 Oct Suez warned at the SAME point → `write_file`, then 50 more `web_search` + 24 other calls → limit 500; Panama and Hormuz
+  also wrote a file after the warning before answering (Panama 1937 s vs 889 s on 1 Oct). deepseek-v4-pro Suez: OK 710 s, 8/8,
+  never warned (23 calls). Proof: the same qwen3.7-plus Suez run with the OLD text patched in-process (test only) → OK 453.5 s,
+  warned after 40 calls → 0 further calls → answer. **FIX (owner: "go ahead with both")**: `git revert 80a71b09` → `05883116`
+  (carried patch — see "Runtime behaviour" above); build while serving; restart 08:57:12–08:59:18 UTC (~2 min down); 3a/3b
+  (nginx `/` `/login` `/setup` 200 WRI + 0 deerflow.tech, `/api/models` 401; app.worldresearch.org 401 = Caddy basic_auth, as
+  always), probe ok:true (0041, redis, 6 models), schema in sync, OWNERSHIP_OK, PW_STRONG/MCP_POOL_OK/ALL_OK/LANG_OK/FIRECRAWL_OK;
+  the running gateway prints the old warning text. **After-fix smoke** (same recipe as 06:28 — three concurrent,
+  qwen3.7-plus, `--no-fallback`, `afterfix/`, 09:06–09:18 UTC): Panama [OK] 696 s (06:28: 1937 s), Suez [OK] 721 s (06:28:
+  FAILED), Hormuz [OK] 726 s (06:28: 640 s), each 8/8 blocks, 0 validation issues; each warned (after 49 / 40 / 43 calls) → 0
+  further tool calls → answer, as on 1 Oct; after it: 0 OwnershipBackendError / stop-timeout / quarantine / Traceback / ERROR
+  lines in the gateway log, 0 sandboxes, 0 Redis owner keys, sandbox-quarantine absent.
+  The owner also moved the chokepoint research's retry model qwen3.8-max → deepseek-v4-pro (lgi `28552b9`).
+  After the 06:28 runs: 0 OwnershipBackendError / stop-timeout lines, 0 quarantine/deferral lines,
+  sandbox-quarantine absent, 0 sandboxes, 0 owner keys.
+- **New behaviour to know:** the login lockout lives in `login_throttle` (shared by everyone behind Caddy — 5 wrong passwords lock
+  the UI login for 300 s — and it now survives restarts; to clear: wait 300 s or `DELETE FROM login_throttle` as deerflow_app
+  inside the gateway); Settings → Users (admin) can disable accounts — a code rollback re-enables them; `?settings=about` now
+  lands on Models (About stays hidden); after any UI MCP toggle extensions_config.json gains `mcpLifecycle` (md5 changes); never
+  delete `sandbox-quarantine/` by hand while containers run; keep `firecrawl_base_url` null; never run `make dev-multi*` here.
+- **Rollback of the 09:00 fix only (code-only):** `make down`; tag `deer-flow-gateway:post-sync-20261014` (+ frontend) back to
+  `:latest`; `./scripts/deploy.sh start`; then a revert-of-the-revert commit on local-fixes (never reset).
+- **Rollback past this sync:** first `alembic downgrade 0033_batch_result_artifact` (helper
+  `~/deer-flow-sync-backups/sync-4e9f6c68/rollback_downgrade_to_0033.py`, UNTESTED; fallback = one-row alembic_version edit, the
+  owner's call), then `git switch --detach pre-sync-20261014` + the image tags; past both syncs then 0028 (20261008-sync helper).
+  Never restore DATABASE_URL from a .env backup made before 13 Oct (dead doadmin).
 
 ### 2026-10-08 sync — 212 commits, merge `523e5acd` (`main`@`89c9f087`; 5 migrations 0028 → 0033)
 - **MERGED 2026-10-08 08:51 UTC on the owner's "go ahead and sync now"** (parents `d754dad9` + `89c9f087` — the tip PINNED by
