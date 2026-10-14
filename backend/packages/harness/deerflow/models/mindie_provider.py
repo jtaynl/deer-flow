@@ -31,11 +31,27 @@ def _safe_literal(value: object) -> bool:
     """Reject non-finite floats nested in an AST fallback value."""
     if isinstance(value, float):
         return math.isfinite(value)
-    if isinstance(value, list):
+    if isinstance(value, (list, tuple, set)):
         return all(_safe_literal(item) for item in value)
     if isinstance(value, dict):
-        return all(_safe_literal(item) for item in value.values())
+        return all(_safe_literal(key) and _safe_literal(item) for key, item in value.items())
     return True
+
+
+def _render_tool_arg(value: object) -> str:
+    """Serialize a tool-call argument for the XML wire format.
+
+    The XML parser's literal_eval fallback can put values json.dumps rejects
+    (e.g. sets) into tool args; degrade those to str() so one unserializable
+    argument cannot fail the whole request, matching the tool-result json
+    block handling below.
+    """
+    if isinstance(value, str):
+        return value
+    try:
+        return json.dumps(value, ensure_ascii=False)
+    except (TypeError, ValueError):
+        return str(value)
 
 
 def _fix_messages(messages: list) -> list:
@@ -78,7 +94,7 @@ def _fix_messages(messages: list) -> list:
         if isinstance(msg, AIMessage) and getattr(msg, "tool_calls", []):
             xml_parts = []
             for tool in msg.tool_calls:
-                args_xml = " ".join(f"<parameter={html.escape(str(k), quote=False)}>{html.escape(v if isinstance(v, str) else json.dumps(v, ensure_ascii=False), quote=False)}</parameter>" for k, v in tool.get("args", {}).items())
+                args_xml = " ".join(f"<parameter={html.escape(str(k), quote=False)}>{html.escape(_render_tool_arg(v), quote=False)}</parameter>" for k, v in tool.get("args", {}).items())
                 xml_parts.append(f"<tool_call> <function={html.escape(str(tool['name']), quote=False)}> {args_xml} </function> </tool_call>")
             full_text = f"{text}\n" + "\n".join(xml_parts) if text else "\n".join(xml_parts)
             fixed.append(AIMessage(content=full_text.strip() or " "))
@@ -330,6 +346,23 @@ class MindIEChatModel(ChatOpenAI):
         result = await super()._agenerate(_fix_messages(messages), stop=stop, run_manager=run_manager, **kwargs)
         return self._patch_result_with_tools(result)
 
+    def _stream(self, messages, stop=None, run_manager=None, **kwargs):
+        if not kwargs.get("tools"):
+            decoder = _EscapedNewlineStreamDecoder()
+            for chunk in super()._stream(_fix_messages(messages), stop=stop, run_manager=run_manager, **kwargs):
+                if isinstance(chunk.message.content, str):
+                    chunk.message.content = decoder.push(chunk.message.content)
+                yield chunk
+            tail = decoder.flush()
+            if tail:
+                yield ChatGenerationChunk(message=AIMessageChunk(content=tail))
+            return
+
+        # Tool-enabled MindIE requests cannot use native streaming, even when
+        # the model's default is streaming=True.
+        result = self._generate(messages, stop=stop, run_manager=run_manager, **{**kwargs, "stream": False})
+        yield from self._simulate_stream(result)
+
     async def _astream(self, messages, stop=None, run_manager=None, **kwargs):
         # Route standard queries to native streaming for lower TTFB
         if not kwargs.get("tools"):
@@ -347,8 +380,13 @@ class MindIEChatModel(ChatOpenAI):
         # Fallback for tool-enabled requests:
         # MindIE currently drops choices when stream=True and tools are present.
         # We await the full generation and yield chunks to simulate streaming.
-        result = await self._agenerate(messages, stop=stop, run_manager=run_manager, **kwargs)
+        result = await self._agenerate(messages, stop=stop, run_manager=run_manager, **{**kwargs, "stream": False})
+        for chunk in self._simulate_stream(result):
+            yield chunk
 
+    @staticmethod
+    def _simulate_stream(result: ChatResult) -> Iterator[ChatGenerationChunk]:
+        """Keep sync/async tool-mode chunking and terminal usage identical."""
         for gen in result.generations:
             msg = gen.message
             content = msg.content

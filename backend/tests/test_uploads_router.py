@@ -833,9 +833,13 @@ def test_startup_cleanup_reclaims_a_published_staging_alias_immediately(tmp_path
     assert result.success is True
     names = sorted(p.name for p in thread_uploads_dir.iterdir())
     assert names[-1] == "notes.txt" and len(names) == 2 and names[0].startswith(".upload-") and names[0].endswith(".part")
-    assert os.lstat(thread_uploads_dir / "notes.txt").st_nlink == 2
-    with pytest.raises(ValueError, match="multiple links"):
-        validate_upload_destination(thread_uploads_dir, "notes.txt")
+    if os.name != "nt":
+        # ``st_nlink`` is authoritative only where the OS decrements it; Windows
+        # keeps a published-then-unlinked upload at 2, so the multi-link rejection
+        # is asserted on POSIX and the sweep below covers the Windows path.
+        assert os.lstat(thread_uploads_dir / "notes.txt").st_nlink == 2
+        with pytest.raises(ValueError, match="multiple links"):
+            validate_upload_destination(thread_uploads_dir, "notes.txt")
 
     assert cleanup_stale_upload_staging_files(tmp_path) == 1
 
@@ -965,10 +969,13 @@ def test_upload_files_does_not_sync_non_local_sandbox_when_total_size_exceeds_li
     assert exc_info.value.status_code == 413
     provider.acquire.assert_not_called()
     provider.acquire_async.assert_awaited_once_with("thread-aio", user_id="owner-upload")
-    assert provider.get.call_count == 2
     assert all(call.args == ("aio-1",) for call in provider.get.call_args_list)
+    sandbox.release_command_scope.assert_called_once()
+    assert get_sandbox_lease_manager(provider).binding_for(sandbox.release_command_scope.call_args.args[0]) is None
     provider.release.assert_called_once_with("aio-1")
     sandbox.update_file.assert_not_called()
+    assert not (thread_uploads_dir / "first.txt").exists()
+    assert not (thread_uploads_dir / "second.txt").exists()
 
 
 def test_upload_files_does_not_sync_non_local_sandbox_when_conversion_fails(tmp_path):
@@ -996,8 +1003,9 @@ def test_upload_files_does_not_sync_non_local_sandbox_when_conversion_fails(tmp_
     assert exc_info.value.status_code == 500
     provider.acquire.assert_not_called()
     provider.acquire_async.assert_awaited_once_with("thread-aio", user_id="owner-upload")
-    assert provider.get.call_count == 2
     assert all(call.args == ("aio-1",) for call in provider.get.call_args_list)
+    sandbox.release_command_scope.assert_called_once()
+    assert get_sandbox_lease_manager(provider).binding_for(sandbox.release_command_scope.call_args.args[0]) is None
     provider.release.assert_called_once_with("aio-1")
     sandbox.update_file.assert_not_called()
     assert not (thread_uploads_dir / "report.pdf").exists()

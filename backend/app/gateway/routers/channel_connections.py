@@ -229,7 +229,8 @@ def _get_repository(request: Request, config: ChannelConnectionsConfig) -> Chann
     if sf is None:
         raise HTTPException(status_code=503, detail="Channel connection persistence is not available")
 
-    repo = ChannelConnectionRepository(sf)
+    # The lifespan loads the DEER_FLOW_CREDENTIALS_KEY cipher off the event loop.
+    repo = ChannelConnectionRepository(sf, cipher=getattr(request.app.state, "credentials_cipher", None))
     request.app.state.channel_connection_repo = repo
     return repo
 
@@ -577,7 +578,14 @@ async def get_channel_connections(request: Request) -> ChannelConnectionsRespons
         return ChannelConnectionsResponse(connections=[])
     repo = _get_repository(request, config)
     rows = await repo.list_connections(_get_user_id(request))
-    return ChannelConnectionsResponse(connections=[ChannelConnectionResponse(**row) for row in rows])
+    connections = []
+    for row in rows:
+        if row.get("provider") == "wechat":
+            # Old bindings stored this private routing token in metadata. New
+            # workers keep it encrypted; never return legacy tokens to browsers.
+            row = {**row, "metadata": {key: value for key, value in (row.get("metadata") or {}).items() if key != "context_token"}}
+        connections.append(ChannelConnectionResponse(**row))
+    return ChannelConnectionsResponse(connections=connections)
 
 
 @router.delete("/connections/{connection_id}", status_code=204)

@@ -63,6 +63,78 @@ def test_config_parsing_normalizes_allowlist_and_defaults():
     assert ch._relay_url == "wss://buzz.example.com"
 
 
+def test_config_mention_free_channel_accepts_a_single_id():
+    """One UUID, quoted or unquoted, is one entry -- not the characters of it.
+
+    A scalar was iterated as if it were a list, so the exemption matched nothing:
+    the channel the operator just made mention-free kept requiring a mention, which
+    looks exactly like a deaf bot. Discord documents and parses the same shape.
+    """
+    assert _channel(mention_free_channels=CHANNEL)._mention_free == frozenset({CHANNEL})
+    assert _channel(mention_free_channels=f"  {CHANNEL}  ")._mention_free == frozenset({CHANNEL})
+    assert CHANNEL in _channel(mention_free_channels=CHANNEL)._mention_free
+
+
+def test_config_mention_free_channel_accepts_a_non_string_scalar():
+    """An unquoted value YAML typed as a number must not abort channel setup."""
+    assert _channel(mention_free_channels=136852)._mention_free == frozenset({"136852"})
+
+
+def test_config_mention_free_channel_empty_shapes_mean_no_exemption():
+    for value in (None, "", "   ", [], frozenset()):
+        assert _channel(mention_free_channels=value)._mention_free == frozenset()
+
+
+def test_config_mention_free_channel_keeps_list_entries_verbatim():
+    ch = _channel(mention_free_channels=[CHANNEL, f" {CHANNEL_B} ", ""])
+    assert ch._mention_free == frozenset({CHANNEL, CHANNEL_B})
+
+
+def test_config_mention_free_channel_scalar_with_separators_warns(caplog):
+    """A comma/space-joined scalar is one literal id, and says so rather than going quiet."""
+    with caplog.at_level(logging.WARNING, logger="app.channels.buzz"):
+        ch = _channel(mention_free_channels=f"{CHANNEL}, {CHANNEL_B}")
+    assert ch._mention_free == frozenset({f"{CHANNEL}, {CHANNEL_B}"})
+    assert "treating it as one literal channel id" in caplog.text
+
+
+def test_config_allowed_users_accepts_a_single_scalar_pubkey():
+    """One pubkey scalar is one member entry -- not the characters of it.
+
+    An ``allowed_users: $BUZZ_OWNER_PUBKEY`` style reference resolves to a
+    scalar string. Iterating it character by character fed each character to
+    ``parse_pubkey``, whose first non-hex character raised and aborted channel
+    construction. Sibling channels (QQ #6730, Discord) already treat a scalar
+    as a single entry.
+    """
+    assert _channel(allowed_users=OWNER)._allowed_users == frozenset({OWNER})
+    assert _channel(allowed_users=f"  {OWNER}  ")._allowed_users == frozenset({OWNER})
+
+
+def test_config_allowed_users_accepts_a_non_string_scalar_without_crashing():
+    """An unquoted scalar YAML typed as a number must not abort channel setup.
+
+    An int is not iterable, so constructing the channel raised
+    ``TypeError: 'int' object is not iterable``; the value is not a usable
+    pubkey, so the deny-by-default allowlist stays empty.
+    """
+    assert _channel(allowed_users=123)._allowed_users == frozenset()
+
+
+def test_config_allowed_users_drops_invalid_entries_with_a_warning(caplog):
+    """A mix of valid and unusable entries keeps the valid ones, fail-closed."""
+    with caplog.at_level(logging.WARNING, logger="app.channels.buzz"):
+        ch = _channel(allowed_users=[OWNER, "not-a-pubkey", 42])
+    assert ch._allowed_users == frozenset({OWNER})
+    assert "Ignoring allowed_users entry" in caplog.text
+
+
+def test_config_allowed_users_empty_shapes_still_deny_by_default():
+    """Unset, blank and empty shapes keep the empty allowlist (deny all)."""
+    for value in (None, "", "   ", [], frozenset()):
+        assert _channel(allowed_users=value)._allowed_users == frozenset()
+
+
 def test_config_rejects_non_websocket_relay_url():
     with pytest.raises(ValueError):
         _channel(relay_url="https://buzz.example.com")
@@ -261,7 +333,7 @@ def test_mention_free_channel_and_thread_follow_pass_without_mention():
     assert len(captured) == 1
 
     class FakeStore:
-        def get_thread_id(self, channel_name, chat_id, topic_id=None):
+        async def get_thread_id(self, channel_name, chat_id, topic_id=None):
             return "thread-1" if topic_id == "aa" * 32 else None
 
     ch2, captured2 = _started()
@@ -959,11 +1031,11 @@ async def test_bound_pubkey_unmentioned_reply_follows_a_thread_the_manager_mappe
     from datetime import UTC, datetime, timedelta
 
     from app.channels.manager import ChannelManager
-    from app.channels.store import ChannelStore
+    from app.channels.store import JsonChannelStore
 
     repo = sql_connection_repo
     await repo.create_oauth_state(owner_user_id="owner-bound", provider="buzz", state="tok-bind", expires_at=datetime.now(UTC) + timedelta(minutes=10))
-    store = ChannelStore(tmp_path / "store.json")
+    store = JsonChannelStore(tmp_path / "store.json")
     ch, captured = _started(connection_repo=repo, channel_store=store)
     ch._transport = FakeTransport()
     manager = ChannelManager(bus=ch.bus, store=store, connection_repo=repo)
@@ -978,7 +1050,7 @@ async def test_bound_pubkey_unmentioned_reply_follows_a_thread_the_manager_mappe
     connection_id = captured[0].connection_id
     assert connection_id
     await manager._store_thread_id(captured[0], "thread-1")
-    assert store.get_thread_id("buzz", CHANNEL, topic_id=root) is None  # the manager wrote the repo only
+    assert await store.get_thread_id("buzz", CHANNEL, topic_id=root) is None  # the manager wrote the repo only
 
     await dispatch(_event(sk=SK_OWNER, content="follow-up", mentions=(), reply_to=root, created_at=1700000300))
     assert len(captured) == 2
@@ -995,7 +1067,7 @@ def test_bound_pubkey_thread_follow_ignores_a_json_mapping_the_manager_would_not
     the bind state, so "the bot stopped following my replies" stays triageable."""
 
     class JsonStoreWithMapping:
-        def get_thread_id(self, channel_name, chat_id, topic_id=None):
+        async def get_thread_id(self, channel_name, chat_id, topic_id=None):
             return "legacy-thread"
 
     repo = FakeConnectionRepo(states={"tok-bind": "owner-bound"})

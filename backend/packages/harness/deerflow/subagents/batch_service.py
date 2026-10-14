@@ -4,6 +4,7 @@ import asyncio
 import logging
 import socket
 import uuid
+from concurrent.futures import Future
 from datetime import UTC, datetime
 from typing import Any
 
@@ -21,12 +22,18 @@ from deerflow.subagents.executor import (
     SubagentExecutor,
     SubagentStatus,
     cleanup_background_task,
+    force_cleanup_background_task,
     get_background_task_result,
     request_cancel_background_task,
+    run_on_isolated_subagent_loop,
 )
 from deerflow.utils.assembly_io import run_assembly
 
 logger = logging.getLogger(__name__)
+
+# Strong references to scheduled registry releases: an event loop keeps only
+# weak references to its tasks.
+_pending_releases: set[Future[None]] = set()
 
 
 def _usage(records: list[dict[str, Any]] | None) -> dict[str, int] | None:
@@ -39,8 +46,40 @@ def _usage(records: list[dict[str, Any]] | None) -> dict[str, int] | None:
     }
 
 
+async def _release_when_terminal(execution_id: str, *, poll_seconds: float, max_wait_seconds: float) -> None:
+    """Remove an abandoned execution's registry entry once it stops."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + max_wait_seconds
+    while (result := get_background_task_result(execution_id)) is not None:
+        if result.status.is_terminal:
+            cleanup_background_task(execution_id)
+            return
+        if loop.time() >= deadline:
+            # Cancellation is cooperative, so a run can ignore it. The worker
+            # held the only copy of this id and the lease has moved on.
+            logger.warning("Abandoned batch execution %s still %s after %.0fs; removing it from the registry", execution_id, result.status.value, max_wait_seconds)
+            force_cleanup_background_task(execution_id)
+            return
+        await asyncio.sleep(poll_seconds)
+
+
+def _log_release_failure(pending: Future[None], *, execution_id: str) -> None:
+    # Unlike an asyncio task, a concurrent future never reports an exception
+    # nobody retrieved, so a failed release would leak its entry silently.
+    if pending.cancelled():
+        return
+    exc = pending.exception()
+    if exc is not None:
+        logger.error("Registry release failed for batch execution %s", execution_id, exc_info=exc)
+
+
 class SubagentBatchService:
     """Lease, execute, and recover durable native-subagent batch items."""
+
+    # Also used by focused shutdown tests constructing an instance via __new__.
+    _stopping: bool = False
+    _stop_drains: int = 0
+    _stop_cleanup_task: asyncio.Task[None] | None = None
 
     def __init__(
         self,
@@ -63,35 +102,63 @@ class SubagentBatchService:
         self._lease_owner = f"{socket.gethostname()}:{uuid.uuid4().hex}"
         self._stop = asyncio.Event()
         self._poller: asyncio.Task[None] | None = None
+        self._stopping = False
+        self._stop_drains = 0
+        self._stop_cleanup_task: asyncio.Task[None] | None = None
         self._executions: dict[str, asyncio.Task[None]] = {}
         self._execution_ids: dict[str, str] = {}
         self._item_batches: dict[str, str] = {}
 
     async def start(self) -> None:
+        if self._stopping:
+            raise RuntimeError("cannot start subagent batch poller before stop completes")
+        cleanup_task = getattr(self, "_stop_cleanup_task", None)
+        if cleanup_task is not None:
+            cleanup_task.result()
+            self._stop_cleanup_task = None
         if self._poller is not None:
             return
         self._stop.clear()
         self._poller = asyncio.create_task(self._run(), name="subagent-batch-poller")
 
     async def stop(self) -> None:
-        self._stop.set()
-        poller = self._poller
-        self._poller = None
+        cleanup_task = getattr(self, "_stop_cleanup_task", None)
+        if cleanup_task is None:
+            # Fence start() before taking the owned-work snapshot. All stop
+            # callers then join this one cleanup generation instead of issuing
+            # competing cancellations and clearing one another's state.
+            self._stopping = True
+            self._stop.set()
+            poller = self._poller
 
-        # Issue every owned-work cancellation before the first await. The
-        # Gateway wraps this stop hook in a deadline; if poller teardown is
-        # slow, cancellation of this coroutine must not prevent native/item
-        # cancellation from being requested.
-        execution_ids = list(self._execution_ids.values())
-        for execution_id in execution_ids:
-            request_cancel_background_task(execution_id)
-        tasks = list(self._executions.values())
+            # Issue every owned-work cancellation before the first await. The
+            # Gateway wraps this stop hook in a deadline; if poller teardown is
+            # slow, cancellation of this caller must not prevent native/item
+            # cancellation from being requested.
+            execution_ids = list(self._execution_ids.values())
+            for execution_id in execution_ids:
+                request_cancel_background_task(execution_id)
+            tasks = list(self._executions.values())
 
-        if poller is not None:
-            poller.cancel()
-        for task in tasks:
-            task.cancel()
+            if poller is not None:
+                poller.cancel()
+            for task in tasks:
+                task.cancel()
 
+            self._stop_drains = 1
+            cleanup_task = asyncio.create_task(
+                self._drain_stop(poller, tasks),
+                name="subagent-batch-stop-cleanup",
+            )
+            self._stop_cleanup_task = cleanup_task
+
+        await asyncio.shield(cleanup_task)
+
+    async def _drain_stop(
+        self,
+        poller: asyncio.Task[None] | None,
+        tasks: list[asyncio.Task[None]],
+    ) -> None:
         if poller is not None:
             await asyncio.gather(poller, return_exceptions=True)
         if tasks:
@@ -99,6 +166,10 @@ class SubagentBatchService:
         self._executions.clear()
         self._execution_ids.clear()
         self._item_batches.clear()
+        if self._poller is poller:
+            self._poller = None
+        self._stop_drains = 0
+        self._stopping = False
 
     async def _run(self) -> None:
         while not self._stop.is_set():
@@ -372,8 +443,6 @@ class SubagentBatchService:
                 result_artifact=result_artifact,
             )
         except asyncio.CancelledError:
-            if execution_id is not None:
-                request_cancel_background_task(execution_id)
             # Do not finalize on process shutdown. The durable lease expires and
             # another worker reclaims the same stable item key.
             raise
@@ -399,7 +468,37 @@ class SubagentBatchService:
             self._execution_ids.pop(item_id, None)
             self._item_batches.pop(item_id, None)
             if execution_id is not None:
-                cleanup_background_task(execution_id)
+                self._release_execution(execution_id)
+
+    def _release_execution(self, execution_id: str) -> None:
+        """Remove a finished execution, or cancel one nothing supervises now.
+
+        Cancellation and polling errors leave this worker while the subagent is
+        still running, and the registry only removes terminal entries, so the
+        removal waits on the subagent loop for the run to stop. Waiting past
+        the lease is pointless: another worker has reclaimed the item by then.
+        """
+        result = get_background_task_result(execution_id)
+        if result is None:
+            return
+        if result.status.is_terminal:
+            cleanup_background_task(execution_id)
+            return
+        request_cancel_background_task(execution_id)
+        release = _release_when_terminal(
+            execution_id,
+            poll_seconds=self._config.poll_interval_seconds,
+            max_wait_seconds=self._config.lease_seconds,
+        )
+        try:
+            pending = run_on_isolated_subagent_loop(release)
+        except Exception:
+            release.close()
+            logger.warning("Could not schedule registry release for batch execution %s", execution_id, exc_info=True)
+            return
+        _pending_releases.add(pending)
+        pending.add_done_callback(_pending_releases.discard)
+        pending.add_done_callback(lambda done: _log_release_failure(done, execution_id=execution_id))
 
     async def _check_acceptance_with_lease(self, item, result, app_config):
         """Keep a completed execution leased until its advisory check drains."""

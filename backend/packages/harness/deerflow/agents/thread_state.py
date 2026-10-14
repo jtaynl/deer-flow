@@ -16,7 +16,7 @@ from langgraph.channels import DeltaChannel
 from langgraph.graph.message import REMOVE_ALL_MESSAGES
 
 import deerflow.checkpoint_patches as _checkpoint_patches  # noqa: F401 - import-time saver fixes
-from deerflow.agents.goal_state import GoalState
+from deerflow.agents.goal_state import GoalOutcomeState, GoalState
 from deerflow.agents.task_continuity.state import TaskNotesChannel, merge_task_notes
 from deerflow.config.database_config import DEFAULT_CHECKPOINT_SNAPSHOT_FREQUENCY, CheckpointChannelMode
 from deerflow.subagents.status_contract import SUBAGENT_STATUS_VALUES
@@ -115,6 +115,12 @@ def merge_viewed_images(existing: dict[str, ViewedImageData] | None, new: dict[s
 
     Special case: If new is an empty dict {}, it clears the existing images.
     This allows middlewares to clear the viewed_images state after processing.
+
+    Dict order tracks recency: a key updated by ``new`` is re-inserted at the
+    end, so a re-viewed image becomes the newest entry. The image injection
+    middleware admits entries newest-first and tells the model to re-view an
+    omitted image, so the recovery only works if the re-viewed entry actually
+    moves to the newest position (#6825, review on #6829).
     """
     if existing is None:
         return new or {}
@@ -123,8 +129,11 @@ def merge_viewed_images(existing: dict[str, ViewedImageData] | None, new: dict[s
     # Special case: empty dict means clear all viewed images
     if len(new) == 0:
         return {}
-    # Merge dictionaries, new values override existing ones for same keys
-    return {**existing, **new}
+    # Merge dictionaries; new values override existing ones for same keys, and
+    # updated keys move to the end so insertion order reflects recency.
+    merged = {key: value for key, value in existing.items() if key not in new}
+    merged.update(new)
+    return merged
 
 
 def merge_todos(existing: list | None, new: list | None) -> list | None:
@@ -366,6 +375,7 @@ class ThreadState(AgentState):
     artifacts: Annotated[list[str], merge_artifacts]
     todos: Annotated[list | None, merge_todos]
     goal: Annotated[GoalState | None, merge_goal]
+    goal_outcome: NotRequired[GoalOutcomeState | None]
     uploaded_files: NotRequired[list[dict] | None]
     viewed_images: Annotated[dict[str, ViewedImageData], merge_viewed_images]  # image_path -> metadata (no base64)
     promoted: Annotated[PromotedTools | None, merge_promoted]
