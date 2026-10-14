@@ -124,8 +124,8 @@ refreshed the local-drive `.env` copy (~05:15 UTC). Verified: the OLD doadmin pa
 DeerFlow unaffected (4× Up, healthy); the WRI site's cluster untouched — its doadmin login
 still works (read-only check). `env.before` shredded. ⚠ The on-box backups `~/deer-flow-sync-backups/*/.env` made BEFORE 13 Oct still
 carry the OLD doadmin DSN (now dead): NEVER restore `DATABASE_URL` from them — a rollback keeps deerflow_app's DSN from the live `.env`.
-(`sync-4e9f6c68/.env`, taken 14 Oct, is a byte-copy of the CURRENT `.env` — live credentials, mode 600; shred it with the
-rollback images after 7 Nov.)
+(A `.env` backup taken AFTER a credential change holds LIVE credentials — keep it at 600 and shred it when its rollback
+window closes; the private notes say which backups those are.)
 
 ## Instance config change — 2026-10-01 16:56 UTC: `deepseek-v4-pro` `max_tokens` 32768 → 65536
 
@@ -438,19 +438,28 @@ done
 sg docker -c 'docker exec -i -w /app/backend -e PYTHONPATH=/app/backend deer-flow-gateway .venv/bin/python -' < ~/deer-flow-sync-backups/smoke_models_inside.py
 
 # 3d. LGI EMBEDDED RESEARCH SMOKE — ALWAYS (since 2026-10-14: the whole battery above passed on a build whose upstream
-#     loop-warning text made qwen3.7-plus keep researching; only this smoke caught it). Use the 3-country recipe of the
-#     2026-10-08 record once LGI stage 0 has recent_readings; until then the chokepoint trio, concurrently:
+#     loop-warning text made qwen3.7-plus keep researching; only this smoke caught it).
+#     (a) Once LGI stage 0 has recent_readings — the 3-country recipe (production path, with the retry ladder):
+#       cd ~/lgi-pipeline && ~/.local/bin/uv run --python 3.12 python scripts/stage1_batch_orchestrator.py \
+#         --countries Singapore Norway Morocco --concurrency 3 --output-dir stage1_outputs_smoke_<date>
+#       PASS = Failures 0 after the ladder AND first-attempt recursion failures no higher than the known rate (compare with
+#       the last record; 8 Oct: 1 of 3 — Norway, rescued on deepseek-v4-pro). A recursion failure on attempt 1 alone is the
+#       known qwen pattern, not a HOLD.
+#     (b) Until then — the chokepoint trio with NO retry, concurrently:
 #       cd ~/lgi-pipeline && for s in panama-canal suez-canal strait-of-hormuz; do ~/.local/bin/uv run --python 3.12 python \
 #         scripts/stage1_chokepoint_research.py --chokepoint $s --model qwen3.7-plus --no-fallback \
 #         --output-dir stage1_outputs_smoke_<date>_chokepoint & done; wait
-#     Expect all three OK with 8/8 blocks and times near the last record (14 Oct after the fix: 696 / 721 / 726 s). Any
-#     GraphRecursionError = HOLD (do not push; find the cause before the next scheduled DeerFlow job).
+#       PASS = all three OK with 8/8 blocks, times near the last record (14 Oct after the fix: 696 / 721 / 726 s). Here any
+#       GraphRecursionError = HOLD (do not push; find the cause before the next scheduled DeerFlow job): with no retry the
+#       trio has no ladder to hide a loop (1 Oct, old text: Suez stopped right after the warning; 14 Oct after the fix: all three).
 
 # 4. Push (NO force — a merge appends; it never rewrites history).
 git push origin local-fixes
 
 # 4b. If the sync (or its follow-ups) changed config.yaml / extensions_config.json, refresh the gist copies
-#     ("Off-box copies of the instance files" above) and verify by md5.
+#     ("Off-box copies of the instance files" above) and verify by md5. ALSO update the gist's notes file
+#     (ops-private.md) whenever the carried patches, the DB login, the secret-file layout or the rollback tags change —
+#     re-fetch it to verify (14 Oct 2026: the notes had drifted since 3 Oct while the config copies stayed current).
 
 # 5. Move the local main MARKER to the merged upstream tip (no checkout, NO push — see the warning above; 2026-10-08).
 git merge-base --is-ancestor main <merged-tip> && git update-ref refs/heads/main <merged-tip> <old-main>
@@ -2311,8 +2320,8 @@ sg docker -c 'docker logs --since 5m deer-flow-gateway 2>&1 \
   `16f940ed` + `4e9f6c68` — the tip PINNED by the review; upstream had moved to `000b5d8c`: its 3 newer commits (IM channel
   leases + migration 0042, E2B/BoxLite timeout marker, tencent-wsa) wait for the next sync after 7 Nov). Reviewed first by a
   6-agent read-only workflow (`wf_5b0ffd3c-0e3`: security GREEN; migrations, runtime, usage, re-skin AMBER; no RED). Prepared
-  files + the full plan: `~/deer-flow-sync-backups/sync-4e9f6c68/` (SYNC_PLAN.md, OUTCOME.md, SHA256SUMS; `.env` = a byte-copy of
-  the CURRENT `.env` (live credentials, 600 — shred with the rollback images after 7 Nov), config.yaml, extensions_config.json;
+  files + the full plan: `~/deer-flow-sync-backups/sync-4e9f6c68/` (SYNC_PLAN.md, OUTCOME.md, SHA256SUMS; a `.env` copy (LIVE
+  credentials — see the private notes), config.yaml, extensions_config.json;
   resolved files, db_check, the
   0033 downgrade helper, rendered DDL, review JSON; before/after db checks, build/start logs, smoke battery log).
 - **Conflicts:** 2 textual, the re-skin: `(auth)/login/page.tsx` → upstream's `useEffect, useContext, useState` import, the
@@ -2331,7 +2340,7 @@ sg docker -c 'docker logs --since 5m deer-flow-gateway 2>&1 \
   (0041_im_notice_preferences)` + eight `Running upgrade` lines in ~1 s AS deerflow_app (doadmin not needed); startup complete;
   env STREAM_BRIDGE 0, CREDENTIALS_KEY + AUTH_TRUSTED_PROXIES 2; `-H 'Host: localhost:2026'` → 200; app.worldresearch.org `/`,
   `/login`, `/setup` → 200 (WRI, 0 deerflow.tech), `/api/models` → 401; config.yaml `83cdcc63` / extensions_config.json
-  `efba0945` UNCHANGED (inode 536614) → no gist refresh; `OWNERSHIP_OK`. 3b: sentinel "schema in sync"; probe ok:true, fails []
+  `efba0945` UNCHANGED (inode 536614) → no config-copy refresh (the gist's notes file was refreshed 14:07 UTC); `OWNERSHIP_OK`. 3b: sentinel "schema in sync"; probe ok:true, fails []
   (pin → 0041, old copy `probe_3b_inside.py.pre-0041`; ownership redis; pii_redaction False; consolidation False; language
   overlay 1; 6 models; bash timeout 600; authorization False). db_check after: 37 tables, all owned by deerflow_app, the 4 tables
   + 4 columns present, watermark rows 77 = threads 77. Battery PW_STRONG PASS → MCP_POOL_OK (23 tools) → ALL_OK → LANG_OK →
