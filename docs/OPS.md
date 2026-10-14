@@ -120,10 +120,12 @@ deerflow_app`. `/etc/environment` (root, 644) still exports the OLD doadmin DSN 
 dead after the reset; ask the owner to delete those DATABASE_* lines (nothing scheduled uses them).
 **14 Oct 2026 — DONE.** Soak passed: the 04:35 LAR brief ran on deerflow_app (rc=0, 350 s, email sent); read-only as
 deerflow_app: no doadmin session, deerflow_app ×10; gateway log clean for 24 h. The owner reset doadmin in the DO panel and
-refreshed the local-drive `.env` copy (~05:15 UTC). Verified: the OLD doadmin password is REJECTED on DeerFlow's cluster
-(dbaas-db-2714274); DeerFlow unaffected (4× Up, healthy); the WRI site's cluster (dbaas-db-4572334) untouched — its doadmin login
-still works (read-only check). `env.before` shredded. ⚠ The older on-box backups `~/deer-flow-sync-backups/*/.env` still carry the
-OLD doadmin DSN (now dead): NEVER restore `DATABASE_URL` from them — a rollback keeps deerflow_app's DSN from the live `.env`.
+refreshed the local-drive `.env` copy (~05:15 UTC). Verified: the OLD doadmin password is REJECTED on DeerFlow's cluster;
+DeerFlow unaffected (4× Up, healthy); the WRI site's cluster untouched — its doadmin login
+still works (read-only check). `env.before` shredded. ⚠ The on-box backups `~/deer-flow-sync-backups/*/.env` made BEFORE 13 Oct still
+carry the OLD doadmin DSN (now dead): NEVER restore `DATABASE_URL` from them — a rollback keeps deerflow_app's DSN from the live `.env`.
+(`sync-4e9f6c68/.env`, taken 14 Oct, is a byte-copy of the CURRENT `.env` — live credentials, mode 600; shred it with the
+rollback images after 7 Nov.)
 
 ## Instance config change — 2026-10-01 16:56 UTC: `deepseek-v4-pro` `max_tokens` 32768 → 65536
 
@@ -288,7 +290,8 @@ sg docker -c "docker exec -w /app/backend -e PYTHONPATH=/app/backend deer-flow-g
 droplet (live file + `~/deer-flow-sync-backups/<ts>/`). Since 2026-09-29 the private ops gist (URL = a credential, see
 the memory topic file) holds VERBATIM copies as the gist files `config.yaml` and `extensions_config.json`. Both are
 secret-free by construction — every credential in `config.yaml` is a `$ENV` reference resolved from `.env`, and the
-extensions file carries only paths; `.env` itself lives ONLY in the password manager and must NEVER go into the gist.
+extensions file carries only paths; the off-box copy of `.env` is the OWNER's local-drive download (refresh it after every `.env` change);
+`.env` must NEVER go into the gist.
 
 **Refresh the copies after ANY change to either file** (a sync that edits them, a `lead_prompt_overlay` edit, a model
 swap, an extensions toggle) — and verify by md5, never trust the PATCH response alone:
@@ -314,12 +317,18 @@ Backups) are a separate, coarser safety net — check that they are on.
 
 ## Upstream sync workflow
 
-> **Newest sync record:** '### 2026-10-08 sync' (in the dated sync log further down — that log is NOT in date order;
-> search for the date). Rollback images `:pre-sync-20261008` are kept until after the 7 Nov 2026 LGI release (decided 11 Oct: October Run 1 is the
-> first full 42-country run since this sync; no DeerFlow sync after ~26 Oct); after they are removed, a rollback
-> rebuilds from git tag `pre-sync-20261008` (= `d754dad9`) — and, past this sync, first `alembic downgrade 0028_parked_attempts`.
-> Roll back by `git switch --detach pre-sync-20261008` — NEVER `git reset` or force-push local-fixes; afterwards record the
-> rollback on local-fixes with a normal commit (`git switch local-fixes`).
+> **Newest sync record:** '### 2026-10-14 sync' (in the dated sync log further down — that log is NOT in date order;
+> search for the date). It carries a runtime patch: the revert of upstream `80a71b09` ("Runtime behaviour" under 'Local
+> patches currently carried' — check it at every sync). **Freeze:** no DeerFlow sync or change from the start of the LGI
+> 8-economy rehearsal (23 Oct 2026) until after the 7 Nov 2026 release; a sync before then must be deployed and smoked by
+> Wed 21 Oct. Keep the images `:pre-sync-20261008`, `:pre-sync-20261014` and `:post-sync-20261014` until after 7 Nov.
+> Rollback of the 14 Oct fix only (code-only): `make down`; tag `:post-sync-20261014` (gateway + frontend) back to `:latest`;
+> `./scripts/deploy.sh start`; then a revert-of-the-revert commit. Rollback past the 14 Oct sync: FIRST alembic downgrade to
+> `0033_batch_result_artifact` with the current code (`~/deer-flow-sync-backups/sync-4e9f6c68/rollback_downgrade_to_0033.py`,
+> UNTESTED; fallback = a one-row alembic_version edit, the owner's call), then `git switch --detach pre-sync-20261014`
+> (= `16f940ed`) + the `:pre-sync-20261014` images; past both syncs, then `alembic downgrade 0028_parked_attempts` and
+> `pre-sync-20261008` (= `d754dad9`). NEVER `git reset` or force-push local-fixes; record any rollback on local-fixes with a
+> normal commit (`git switch local-fixes`).
 
 `local-fixes` is **merge-maintained** (50+ merge commits — it merges `upstream/main`
 directly). **Do NOT rebase it**: a rebase would rewrite 200+ commits and force-push a
@@ -362,6 +371,8 @@ git fetch upstream main
 git checkout local-fixes
 git merge-tree --write-tree local-fixes <reviewed-tip-sha> >/dev/null && echo "clean"  # optional conflict preview
 git merge --no-edit <reviewed-tip-sha>             # resolve conflicts if any
+#    Then walk 'Local patches currently carried' (below) as a checklist — incl. the "Runtime behaviour" git-log check:
+#    the two loop-warning constants must still say 'Stop calling tools and produce your final answer now'.
 
 # 2. Record the sync in this file: add a '### YYYY-MM-DD sync — N commits, merge <sha> (`main`@<tip>)' entry ABOVE the
 #    newest one in the dated sync log, and UPDATE the pointer at the top of this section (newest record; rollback git tag +
@@ -398,7 +409,8 @@ sg docker -c 'docker exec deer-flow-gateway sh -lc "cd /app/backend && PYTHONPAT
 #       ~/deer-flow-sync-backups/ (since 2026-09-29; they were /tmp-only before). Expect `"ok": true, "fails": []`:
 #       pii_redaction False, language_block_in_template FALSE + language_overlay_rendered_count 1 (the <language>
 #       rule lives in config.yaml lead_prompt_overlay.append since 2026-09-29), alembic head STRING, sandbox
-#       bash timeout 600.0, authorization False, consolidation False, eviction confidence, models present.
+#       bash timeout 600.0, authorization False, consolidation False, eviction confidence, models present (incl.
+#       deepseek-v4-pro, the research retry model), loop_warning_text_ok True (since 2026-10-14 — the carried revert).
 sg docker -c 'docker exec -i -w /app/backend -e PYTHONPATH=/app/backend deer-flow-gateway .venv/bin/python -' < ~/deer-flow-sync-backups/probe_3b_inside.py
 
 # 3c. SMOKE A REAL CHAT RUN — HTTP 200 + "startup complete" do NOT exercise the run/persist path (that's
@@ -424,6 +436,15 @@ done
 #           roster-specific (names hard-coded: mimo-v2.6-pro live; qwen3.6-plus / mimo-v2.5-pro removed) — edit the
 #           names before the next roster change, then persist the edited copy.
 sg docker -c 'docker exec -i -w /app/backend -e PYTHONPATH=/app/backend deer-flow-gateway .venv/bin/python -' < ~/deer-flow-sync-backups/smoke_models_inside.py
+
+# 3d. LGI EMBEDDED RESEARCH SMOKE — ALWAYS (since 2026-10-14: the whole battery above passed on a build whose upstream
+#     loop-warning text made qwen3.7-plus keep researching; only this smoke caught it). Use the 3-country recipe of the
+#     2026-10-08 record once LGI stage 0 has recent_readings; until then the chokepoint trio, concurrently:
+#       cd ~/lgi-pipeline && for s in panama-canal suez-canal strait-of-hormuz; do ~/.local/bin/uv run --python 3.12 python \
+#         scripts/stage1_chokepoint_research.py --chokepoint $s --model qwen3.7-plus --no-fallback \
+#         --output-dir stage1_outputs_smoke_<date>_chokepoint & done; wait
+#     Expect all three OK with 8/8 blocks and times near the last record (14 Oct after the fix: 696 / 721 / 726 s). Any
+#     GraphRecursionError = HOLD (do not push; find the cause before the next scheduled DeerFlow job).
 
 # 4. Push (NO force — a merge appends; it never rewrites history).
 git push origin local-fixes
@@ -1535,20 +1556,20 @@ Authoritative list — regenerate the raw file set with
 
 **One runtime behaviour patch is carried (since 2026-10-14): the revert of upstream `80a71b09`** (see "Runtime
 behaviour" below). The two bug hotfixes we once had were absorbed upstream (see "Absorbed" below). Everything else
-carried is **deployment config** or the **WRI re-skin**. All of it can conflict, so treat this list as the checklist
-after every sync.
+carried is **deployment config**, the **WRI re-skin**, or the fork-owned **chained `web_fetch`** module (its own section
+above; upstream never writes that path). All of it can conflict, so treat this list as the checklist after every sync.
 
 ### Runtime behaviour
 | Path | What we carry | Why |
 | --- | --- | --- |
 | `agents/middlewares/loop_detection_middleware.py` (+ `backend/tests/test_loop_detection_middleware.py`, one README line, one middleware `AGENTS.md` line) | **upstream `80a71b09` (#6804) REVERTED** (`05883116`, 2026-10-14): the two warn-level loop messages read "…Stop calling tools and produce your final answer now…" again; file + tests byte-identical to `89c9f087` | #6804's "Stop calling <tool> and wrap up … first write what you have collected so far to that file" made qwen3.7-plus write a file after the per-tool frequency warning and then resume researching → `GraphRecursionError` at 500 (Suez, 14 Oct). Research tasks here answer inline and run without subagents. **After every sync:** `git log <old-main>..<new-main> -- backend/packages/harness/deerflow/agents/middlewares/loop_detection_middleware.py`; both `_WARNING_MSG` and `_TOOL_FREQ_WARNING_MSG` must still contain "Stop calling tools and produce your final answer now"; if upstream edits those lines again, keep ours and re-run the qwen3.7-plus chokepoint smoke. Drop the patch only after that smoke passes with upstream's text. |
+| `backend/packages/harness/deerflow/community/wri_chained_fetch/` (+ `backend/tests/test_wri_chained_fetch.py`) | the chained `web_fetch` (Jina → Firecrawl → Tavily) | fork-owned and additive — see "WRI chained `web_fetch`" above |
 
 ### Deployment / infrastructure
 | Path | What we carry | Why |
 | --- | --- | --- |
 | `docker/docker-compose.yaml` + `scripts/deploy.sh` | **redis PARTIAL strip** (since 2026-10-03): the `redis` service, its volume, the gateway `depends_on` gate and the deploy `services` entry are back exactly as upstream carries them; still stripped = the gateway's `DEER_FLOW_STREAM_BRIDGE_REDIS_URL` env (stream bridge stays memory); the provisioner stays gated off | the embedded multi-process research batches need the cross-process sandbox ownership store (`#4206`, observed 2026-10-02). **Full rationale, resolution order, failure modes, rollback: note 20a.** History: stripped `08a1a242` 2026-07-04 (same day upstream's `72f033fb`/#3191 added the service); ownership un-strip 2026-10-03 (branch `redis-ownership`) |
 | `backend/Dockerfile` | **readabilipy JS deps** + **Playwright MCP + chromium** (`PLAYWRIGHT_BROWSERS_PATH=/ms-playwright`, ~656 MB) | web-extraction + browser automation for the research path |
-| `.dockerignore` | excludes `backend/.deer-flow/` | keeps the 33 MB runtime memory store out of the build context |
 | `scripts/deploy.sh` | our deploy wrapper | instance-specific |
 | `backend/scripts/schema_sync.py` | schema-drift **read-only sentinel** (`5e75178e`) | alembic OWNS DDL; this only *reports* drift |
 
@@ -1561,7 +1582,8 @@ language rule is GONE until that block is restored — copies in `~/deer-flow-sy
 | Path(s) | What we carry |
 | --- | --- |
 | `(auth)/login/page.tsx`, `(auth)/setup/page.tsx`, `(auth)/layout.tsx` | maroon `#7b1e2b` WRI skin + logo; **grafted upstream logic lives here too** — the remember-me control and `#4371`'s `setupStatusPhase` / `unavailable` mode |
-| **`core/i18n/locales/en-US.ts` + `zh-CN.ts`** | **57 UI strings say "WRI AI", not "DeerFlow"** (29 en + 28 zh; `8f25c2cf`/`448ec920` + 2026-08-24 sync added 4/locale: MCP-task retry strings `#4833`/`#4963`, scheduler queue text `#4918`) — notification, channels, memory, IM-bot blurbs, Lark-OAuth flow, skill install, shortcuts, agent save/load, SSO notice, remember-me, notification `testTitle`. Plus the disclaimer → `AI can make mistakes` (`be0139fa`) |
+| **`core/i18n/locales/en-US.ts` + `zh-CN.ts`** | **"WRI AI", not "DeerFlow" — tally = lines containing 'WRI AI': 45 en / 44 zh (14 Oct 2026); keepers 'DeerFlow' 3 + 3** (history: 29 en + 28 zh; `8f25c2cf`/`448ec920` + 2026-08-24 sync added 4/locale: MCP-task retry strings `#4833`/`#4963`, scheduler queue text `#4918`) — notification, channels, memory, IM-bot blurbs, Lark-OAuth flow, skill install, shortcuts, agent save/load, SSO notice, remember-me, notification `testTitle`. Plus the disclaimer → `AI can make mistakes` (`be0139fa`) |
+| `core/agents/api.ts`, `core/sidecar/context.ts` | the two non-locale "DeerFlow" → "WRI AI" strings ("Could not reach the WRI AI backend.", the side-conversation "current WRI AI chat") |
 | `workspace/workspace-nav-menu.tsx` | nav **de-branding** — deerflow.tech / GitHub / issues / mailto links + the About item + Bug/Globe/Info/Mail/Github icons removed |
 | `workspace/workspace-header.tsx`, `workspace-container.tsx`, `settings/settings-dialog.tsx` | WRI chrome |
 | `settings/about-content.ts`, `about.md` | WRI About page — **deliberately credits** "WRI AI runs on the open-source DeerFlow framework from ByteDance" (correct attribution for MIT-licensed upstream work — do NOT strip) |
@@ -1584,8 +1606,9 @@ factually reference `bytedance/deer-flow`, and their nav entries are already rem
   Byte-equivalence was proven on the live container BEFORE the switch: upstream's template + the overlay renders the
   identical 25,543-char prompt with the block moved from after `</role>` to the very end (exactly one occurrence).
   The 3b probe now asserts `language_block_in_template: false`, `language_overlay_rendered_count: 1`,
-  `language_overlay_at_end: true`, `lead_prompt_overlay_append_set: true`. **No backend source file is carried any
-  more** — `git diff --name-only upstream/main...local-fixes` shows deployment config + the re-skin only.
+  `language_overlay_at_end: true`, `lead_prompt_overlay_append_set: true`. No backend patch is carried for the
+  `<language>` rule any more. (Backend files carried today: the `80a71b09` revert — "Runtime behaviour"; the fork-owned
+  `wri_chained_fetch` module; `backend/Dockerfile`; `backend/scripts/schema_sync.py`.)
   ⚠ DUPLICATE trap of the FOWNER kind: should upstream ever ship its own `<language>` block in the template, the
   rendered prompt would carry two — the probe's count=1 assertion is the tripwire.
   **Restoring the block after a config.yaml loss:** the exact text is in git history —
@@ -1594,6 +1617,8 @@ factually reference `bytedance/deer-flow`, and their nav entries are already rem
   and re-run the 3b probe (`language_overlay_rendered_count: 1`). Backup copies: `~/deer-flow-sync-backups/*/config.yaml`.
 
 ### Absorbed upstream (no longer carried)
+- `.dockerignore` — our `backend/.deer-flow/` exclude was absorbed **2026-08-21** by upstream `#4853`; only a comment line
+  saying so is still carried (the 08-21 record's "now reads 'excludes docs/' only" is outdated — docs/ is upstream's too).
 - `stop_grace_period: 30s` on the gateway (`809dbd67`, June; never listed in the carried table) — absorbed **2026-10-08**
   by upstream `#6347` (`063383d9`): `stop_grace_period: 90s` + uvicorn `--timeout-graceful-shutdown 10` (shutdown now needs
   ~71 s incl. the 30 s memory flush; 30 s would SIGKILL it). The TEXTUAL merge kept BOTH keys and compose refused the file
@@ -2286,13 +2311,15 @@ sg docker -c 'docker logs --since 5m deer-flow-gateway 2>&1 \
   `16f940ed` + `4e9f6c68` — the tip PINNED by the review; upstream had moved to `000b5d8c`: its 3 newer commits (IM channel
   leases + migration 0042, E2B/BoxLite timeout marker, tencent-wsa) wait for the next sync after 7 Nov). Reviewed first by a
   6-agent read-only workflow (`wf_5b0ffd3c-0e3`: security GREEN; migrations, runtime, usage, re-skin AMBER; no RED). Prepared
-  files + the full plan: `~/deer-flow-sync-backups/sync-4e9f6c68/` (SYNC_PLAN.md, SHA256SUMS; resolved files, db_check, the
+  files + the full plan: `~/deer-flow-sync-backups/sync-4e9f6c68/` (SYNC_PLAN.md, OUTCOME.md, SHA256SUMS; `.env` = a byte-copy of
+  the CURRENT `.env` (live credentials, 600 — shred with the rollback images after 7 Nov), config.yaml, extensions_config.json;
+  resolved files, db_check, the
   0033 downgrade helper, rendered DDL, review JSON; before/after db checks, build/start logs, smoke battery log).
 - **Conflicts:** 2 textual, the re-skin: `(auth)/login/page.tsx` → upstream's `useEffect, useContext, useState` import, the
   next-themes import dropped (blob `4c504e49`); `workspace/settings/settings-dialog.tsx` → upstream's typed items list, the
   admin-only Users entry and the activeId fallback, minus the About item (blob `75369b10`; 9 `dynamic(`). Auto-merged blobs as
   predicted (layouts, agents/api.ts, locales — keepers 3/3, tally 45 en / 44 zh). Carried patches unchanged (Dockerfile,
-  .dockerignore, schema_sync, wri_chained_fetch). The merge commit carries the attribution lines (amended before any push).
+  .dockerignore comment, schema_sync, wri_chained_fetch). The merge commit carries the attribution lines (amended before any push).
 - **Build** ~06:13–06:17 UTC while the old stack served (`✓ Compiled successfully in 68s`; 163 static pages). deploy.sh
   generated `backend/.deer-flow/.credentials_key` (600 brandon; NEW secret file — never printed, never in the gist or .env;
   if ever set by hand only a Fernet key: a malformed DEER_FLOW_CREDENTIALS_KEY stops the gateway at boot). Rollback marks: git
@@ -2323,15 +2350,23 @@ sg docker -c 'docker logs --since 5m deer-flow-gateway 2>&1 \
   14 Oct Suez warned at the SAME point → `write_file`, then 50 more `web_search` + 24 other calls → limit 500; Panama and Hormuz
   also wrote a file after the warning before answering (Panama 1937 s vs 889 s on 1 Oct). deepseek-v4-pro Suez: OK 710 s, 8/8,
   never warned (23 calls). Proof: the same qwen3.7-plus Suez run with the OLD text patched in-process (test only) → OK 453.5 s,
-  warned after 40 calls → 0 further calls → answer. **FIX (owner: "go ahead with both")**: `git revert 80a71b09` → `05883116`
-  (carried patch — see "Runtime behaviour" above); build while serving; restart 08:57:12–08:59:18 UTC (~2 min down); 3a/3b
+  warned after 40 calls → 0 further calls → answer. **FIX**: `git revert 80a71b09` → `05883116`, prepared on the side branch
+  fix-loop-warning-20261014 at 08:26 (old-text proof 08:32); owner OK ~08:50 ("go ahead with both"); fast-forwarded into
+  local-fixes 08:55 (carried patch — see "Runtime behaviour" above); built 08:55–08:56 while serving; restart
+  08:57:12–08:59:18 UTC (~2 min down); 3a/3b
   (nginx `/` `/login` `/setup` 200 WRI + 0 deerflow.tech, `/api/models` 401; app.worldresearch.org 401 = Caddy basic_auth, as
-  always), probe ok:true (0041, redis, 6 models), schema in sync, OWNERSHIP_OK, PW_STRONG/MCP_POOL_OK/ALL_OK/LANG_OK/FIRECRAWL_OK;
+  always), probe ok:true (0041, redis, 6 models; full output re-run 14:05 UTC with the new `loop_warning_text_ok` key →
+  `sync-4e9f6c68/probe_after_fix.json`), schema in sync, OWNERSHIP_OK, PW_STRONG/MCP_POOL_OK/ALL_OK/LANG_OK/FIRECRAWL_OK;
   the running gateway prints the old warning text. **After-fix smoke** (same recipe as 06:28 — three concurrent,
   qwen3.7-plus, `--no-fallback`, `afterfix/`, 09:06–09:18 UTC): Panama [OK] 696 s (06:28: 1937 s), Suez [OK] 721 s (06:28:
   FAILED), Hormuz [OK] 726 s (06:28: 640 s), each 8/8 blocks, 0 validation issues; each warned (after 49 / 40 / 43 calls) → 0
   further tool calls → answer, as on 1 Oct; after it: 0 OwnershipBackendError / stop-timeout / quarantine / Traceback / ERROR
-  lines in the gateway log, 0 sandboxes, 0 Redis owner keys, sandbox-quarantine absent.
+  lines in the gateway log, 0 sandboxes, 0 Redis owner keys, sandbox-quarantine absent. Later: ONE readiness-probe failure at
+  10:06:42 UTC (database + checkpointer probes; psycopg OperationalError 'server closed the connection unexpectedly' — the
+  managed Postgres dropped the connection), self-recovered; none since (checked 14:05 UTC; healthy, 0 restarts). Watch for
+  more through the 23–27 Oct rehearsal. **Runbook step 3d** (the LGI embedded smoke) and the probe's `loop_warning_text_ok`
+  were added after this sync. **Freeze:** no DeerFlow change from 23 Oct until after 7 Nov (pointer at the top of 'Upstream
+  sync workflow').
   The owner also moved the chokepoint research's retry model qwen3.8-max → deepseek-v4-pro (lgi `28552b9`).
   After the 06:28 runs: 0 OwnershipBackendError / stop-timeout lines, 0 quarantine/deferral lines,
   sandbox-quarantine absent, 0 sandboxes, 0 owner keys.
