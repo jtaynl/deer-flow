@@ -317,6 +317,24 @@ Backups) are a separate, coarser safety net — check that they are on.
 
 ## Upstream sync workflow
 
+> **Upstream check 18 Oct 2026 (report only; nothing merged).** The range was `main` 4e9f6c68 .. `12e619c2`, 103 commits.
+> Review wf_05322455-db9 is saved in ~/deer-flow-sync-backups/upstream-check-20261018/ (review.json, commits.txt).
+> The owner chose to **HOLD until after the 7 Nov release**, knowing the range keeps growing (about 25 commits a day).
+>
+> Findings, still to re-check at that sync:
+> - The merge is clean, and the carried 80a71b09 revert stays byte-identical.
+> - The migrations 0042–0044 run as deerflow_app. But 0043 rewrites notification_deliveries, so a rollback needs a NEW
+>   0044→0041 downgrade helper.
+> - config_version 61 only adds `sandbox.prewarm` (off) and only warns; config.yaml needs no edit.
+> - **`16d36ccd2` (#6998) costs every research turn rounds.** SandboxMiddleware always overrides before_model/abefore_model,
+>   which do nothing with prewarm off. That adds one graph node per round: 14 steps instead of 13, so recursion_limit
+>   500 ≈ 35 rounds (was 38). BEFORE any restart, carry a patch that deletes the two no-op hooks (preferred), or raise the
+>   7 recursion limits in lgi-pipeline and WRI.
+> - **#6918 (246456694) summarization covers all selected history.** This is a model-visible change of the 80a71b09 kind; judge
+>   it with the step-3d LGI smoke.
+>
+> The deploy, with its boot migrations, will need an owner-run launcher: the classifier blocks production deploys.
+>
 > **Newest sync record:** '### 2026-10-14 sync' (in the dated sync log further down — that log is NOT in date order;
 > search for the date). It carries a runtime patch: the revert of upstream `80a71b09` ("Runtime behaviour" under 'Local
 > patches currently carried' — check it at every sync). **Freeze:** no DeerFlow sync or change from the start of the LGI
