@@ -317,6 +317,19 @@ Backups) are a separate, coarser safety net — check that they are on.
 
 ## Upstream sync workflow
 
+> **7 Nov 2026 — the hold is over.** The LGI October 2026 edition was released on 7 Nov at 08:26:59 UTC, so the freeze
+> (no DeerFlow change from 23 Oct) and the 18 Oct hold have ended. The next sync is planned for the week of 9 Nov and stays
+> two-step: fetch, review the range beyond `12e619c2` (the fork's main already shows about 480 more commits), report it, and
+> merge and deploy only on the owner's 'go ahead and sync'. Not built yet: the patch that deletes SandboxMiddleware's two
+> no-op `before_model`/`abefore_model` overrides from `16d36ccd2` (#6998), with its test; the 0044→0041 downgrade helper;
+> the owner-run launcher and its rehearsal. Without the patch the 7 recursion limits below buy about 7 % fewer rounds.
+> Restart windows: not 04:00–05:15 UTC (the LAR watch) or 19:00–21:00 UTC (outreach discovery), never during an outreach
+> send (the October LGI tranches from Mon 9 Nov) or an embedded LGI/PMI/outreach client run; deployed and smoked (step 3d)
+> before the Monitor's December stage 1c (26 Nov) and the LGI November edition's Run 1. The rollback images
+> `:pre-sync-20261008`, `:pre-sync-20261014` and `:post-sync-20261014` may now be removed; the next sync tags its own first.
+> Since the 14 Oct restart the gateway logged readiness-probe warnings on 16 Oct (2), 28 Oct (4, one episode) and 1 Nov (1),
+> all self-recovered.
+>
 > **Upstream check 18 Oct 2026 (report only; nothing merged).** The range was `main` 4e9f6c68 .. `12e619c2`, 103 commits.
 > Review wf_05322455-db9 is saved in ~/deer-flow-sync-backups/upstream-check-20261018/ (review.json, commits.txt).
 > The owner chose to **HOLD until after the 7 Nov release**, knowing the range keeps growing (about 25 commits a day).
@@ -337,9 +350,9 @@ Backups) are a separate, coarser safety net — check that they are on.
 >
 > **Newest sync record:** '### 2026-10-14 sync' (in the dated sync log further down — that log is NOT in date order;
 > search for the date). It carries a runtime patch: the revert of upstream `80a71b09` ("Runtime behaviour" under 'Local
-> patches currently carried' — check it at every sync). **Freeze:** no DeerFlow sync or change from the start of the LGI
-> 8-economy rehearsal (23 Oct 2026) until after the 7 Nov 2026 release; a sync before then must be deployed and smoked by
-> Wed 21 Oct. Keep the images `:pre-sync-20261008`, `:pre-sync-20261014` and `:post-sync-20261014` until after 7 Nov.
+> patches currently carried' — check it at every sync). **Freeze (23 Oct – 7 Nov 2026): ended** with the LGI
+> October 2026 release on 7 Nov. The images `:pre-sync-20261008`, `:pre-sync-20261014` and `:post-sync-20261014` were kept
+> until then; they may now be removed (the next sync tags its own rollback images first).
 > Rollback of the 14 Oct fix only (code-only): `make down`; tag `:post-sync-20261014` (gateway + frontend) back to `:latest`;
 > `./scripts/deploy.sh start`; then a revert-of-the-revert commit. Rollback past the 14 Oct sync: FIRST alembic downgrade to
 > `0033_batch_result_artifact` with the current code (`~/deer-flow-sync-backups/sync-4e9f6c68/rollback_downgrade_to_0033.py`,
@@ -383,7 +396,8 @@ cd ~/deer-flow
 #    Pre-flight right before the restart: no embedded LGI/PMI/outreach client (`pgrep -af 'stage1[_]|outreach_discove[r]|
 #    lar_watch_brie[f]'` on the host; `docker top deer-flow-gateway -eo pid,args` — `-eo args` alone FAILS), 0 sandboxes,
 #    the never-set gate variables count 0 (note 20). Windows to avoid: 04:35 UTC (LAR brief), 19:00 UTC discovery (~2.7 h),
-#    and any outreach send.
+#    and any outreach send — from Mon 9 Nov 2026 the October-edition LGI tranches; their send times are in the pointer
+#    at the top of WRI docs/OUTREACH_ENGINE.md.
 # 1. Merge THE REVIEWED, PINNED TIP into local-fixes — NEVER `upstream/main` by name (it moves after the review).
 git fetch upstream main
 git checkout local-fixes
