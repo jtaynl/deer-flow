@@ -296,6 +296,7 @@ async def test_prewarm_admission_preserves_existing_modes(setup, mode):
     assert provider.calls == []
 
 
+@pytest.mark.skip(reason="WRI fork: SandboxMiddleware model hooks removed (no per-round node; prewarm unsupported) - docs/OPS.md")
 @pytest.mark.anyio
 @pytest.mark.parametrize("failure", [False, True])
 async def test_compiled_graph_model_outcome_cleans_unclaimed_prewarm(setup, monkeypatch, failure):

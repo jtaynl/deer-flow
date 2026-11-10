@@ -111,6 +111,7 @@ async def run_after_prewarm_ready(provider, config, *, case, thread_id):
         await asyncio.gather(task, return_exceptions=True)
 
 
+@pytest.mark.skip(reason="WRI fork: SandboxMiddleware model hooks removed (no per-round node; prewarm unsupported) - docs/OPS.md")
 @pytest.mark.anyio
 async def test_real_graph_prewarm_starts_during_model_and_is_claimed_once(observed):
     provider, config = observed
@@ -138,6 +139,7 @@ async def test_real_graph_prewarm_starts_during_model_and_is_claimed_once(observ
     assert not provider.active
 
 
+@pytest.mark.skip(reason="WRI fork: SandboxMiddleware model hooks removed (no per-round node; prewarm unsupported) - docs/OPS.md")
 @pytest.mark.anyio
 @pytest.mark.parametrize("tool_tick_offset", [0.0, 0.015], ids=["same-tick", "next-tick"])
 async def test_prewarm_reused_uses_event_order_with_coarse_clock(observed, monkeypatch, tool_tick_offset: float):
@@ -193,6 +195,7 @@ async def test_real_graph_baseline_waits_until_tool_to_start(observed):
     assert row["prewarm_reused"] is False
 
 
+@pytest.mark.skip(reason="WRI fork: SandboxMiddleware model hooks removed (no per-round node; prewarm unsupported) - docs/OPS.md")
 @pytest.mark.anyio
 @pytest.mark.parametrize("case,expected_acquires", [("plain", 0), ("fenced_no_tool", 1), ("model_error", 1)])
 async def test_no_tool_and_failure_close_actual_graph_ownership(observed, case, expected_acquires):
@@ -278,6 +281,7 @@ def test_invalid_resource_interval_rejected_before_provider_creation(monkeypatch
     assert exc.value.code == 2
 
 
+@pytest.mark.skip(reason="WRI fork: SandboxMiddleware model hooks removed (no per-round node; prewarm unsupported) - docs/OPS.md")
 @pytest.mark.anyio
 async def test_expected_model_failure_cannot_mask_cleanup_failure(observed, monkeypatch):
     provider, config = observed

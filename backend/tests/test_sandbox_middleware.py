@@ -608,6 +608,7 @@ async def test_default_lazy_tool_acquisition_uses_async_provider() -> None:
     assert runtime.context["sandbox_id"] == "async-sandbox"
 
 
+@pytest.mark.skip(reason="WRI fork: SandboxMiddleware model hooks removed (no per-round node; prewarm unsupported) - docs/OPS.md")
 @pytest.mark.anyio
 async def test_prewarm_overlaps_model_call_and_is_claimed_by_first_tool(monkeypatch: pytest.MonkeyPatch) -> None:
     provider = _DelayedAsyncProvider()
@@ -645,6 +646,7 @@ async def test_prewarm_overlaps_model_call_and_is_claimed_by_first_tool(monkeypa
     assert provider.thread_ids == ["thread-prewarm"]
 
 
+@pytest.mark.skip(reason="WRI fork: SandboxMiddleware model hooks removed (no per-round node; prewarm unsupported) - docs/OPS.md")
 @pytest.mark.anyio
 async def test_unused_prewarm_is_released_after_run(monkeypatch: pytest.MonkeyPatch) -> None:
     provider = _AsyncOnlyProvider()
