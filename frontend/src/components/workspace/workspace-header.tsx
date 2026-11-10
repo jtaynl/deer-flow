@@ -9,12 +9,14 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar";
 import { useI18n } from "@/core/i18n/hooks";
 import { env } from "@/env";
 import { cn } from "@/lib/utils";
+
+import { useWorkspaceSidebarExpanded } from "./workspace-sidebar-frame";
+import { WorkspaceSidebarTrigger } from "./workspace-sidebar-trigger";
 
 function WriLogo({ size = 28, className }: { size?: number; className?: string }) {
   return (
@@ -60,7 +62,8 @@ function WriBrand({ asLink }: { asLink: boolean }) {
 
 export function WorkspaceHeader({ className }: { className?: string }) {
   const { t } = useI18n();
-  const { state } = useSidebar();
+  const { isMobile } = useSidebar();
+  const isSidebarOpen = useWorkspaceSidebarExpanded();
   const pathname = usePathname();
   return (
     <>
@@ -70,17 +73,27 @@ export function WorkspaceHeader({ className }: { className?: string }) {
           className,
         )}
       >
-        {state === "collapsed" ? (
+        {!isSidebarOpen ? (
           <div className="group-has-data-[collapsible=icon]/sidebar-wrapper:-translate-y flex w-full cursor-pointer items-center justify-center">
-            <div className="block pt-1 group-hover/workspace-header:hidden">
+            <div
+              className={cn(
+                "block pt-1 group-hover/workspace-header:hidden",
+                isMobile && "hidden",
+              )}
+            >
               <WriLogo size={24} />
             </div>
-            <SidebarTrigger className="hidden pl-2 group-hover/workspace-header:block" />
+            <WorkspaceSidebarTrigger
+              className={cn(
+                "pl-2",
+                !isMobile && "hidden group-hover/workspace-header:block",
+              )}
+            />
           </div>
         ) : (
           <div className="flex items-center justify-between gap-2">
             <WriBrand asLink={env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY === "true"} />
-            <SidebarTrigger />
+            <WorkspaceSidebarTrigger />
           </div>
         )}
       </div>

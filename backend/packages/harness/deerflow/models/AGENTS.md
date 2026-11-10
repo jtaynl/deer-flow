@@ -24,6 +24,8 @@ nested underflow into zero. Regression coverage is in `tests/test_mindie_provide
 
 ### Model Factory (`packages/harness/deerflow/models/factory.py`)
 
+`selection.py` resolves direct user model controls against the visible catalog without model calls. `aliases` is presentation metadata, stripped from provider kwargs and assembly parameters. Gateway copies `subagent_model_name`/`model_selection_requested` into runtime context only. Explicit choices use `model:use` with no deny-to-default substitution; provider errors retain deployment policy. Bind selected child names through cloned task schemas; never mutate shared tools or agent configs.
+
 Request-admission waits follow the next scheduled admission and configured
 interval, capped at 50 ms; the cap must not become a minimum poll interval that
 limits high-RPM throughput. Local `AdmissionError` is structurally non-retriable
@@ -41,6 +43,7 @@ while handing off to the wait queue.
 - Config values starting with `$` resolved as environment variables
 - Missing provider modules surface actionable install hints from reflection resolvers (for example `uv add langchain-google-genai`)
 - Optional `models[].request_admission` attaches a process-shared `BaseRateLimiter` at the model factory. Identical explicit groups share one FIFO across model instances, threads and event loops; implicit groups use the configured model name. Policies are immutable once registered and conflicting settings fail construction. A monotonic minimum interval spaces requests without idle-time burst credit; bounded waiters poll without occupying executor threads and unregister in `finally`. The factory strips the policy from provider kwargs and sets exposed SDK `max_retries=0` so middleware retries re-enter admission. This limits model invocations, not tokens or a distributed provider account; custom providers bypassing BaseChatModel hooks are outside the contract. Tests: `test_model_request_admission.py` and `test_model_request_admission_fifo_atomic.py`.
+- `_apply_openai_responses_api_default` routes the gpt-6 family through the OpenAI Responses API by default (`use_responses_api: true` + `output_version: responses/v1`), because the locked `langchain-openai==1.2.1` lacks a gpt-6 routing branch and OpenAI rejects function tools for gpt-6 on `/v1/chat/completions`. Gated on `issubclass(model_class, BaseChatOpenAI)` and a `gpt-6`-prefixed `model`. An explicit `use_responses_api` always wins; custom endpoints (`base_url`/`openai_api_base` or a set `OPENAI_BASE_URL`/`OPENAI_API_BASE` environment variable) and `AzureChatOpenAI` are skipped (they may lack `/responses`); an explicit `output_version` alone is preserved while `use_responses_api: true` is still injected; injection is logged. Regression cases live in `tests/test_model_factory.py` (issue #6841).
 
 ### Reasoning Capability Contract (`packages/harness/deerflow/models/reasoning.py`)
 
@@ -75,7 +78,8 @@ generic `thinking_enabled` / `reasoning_effort` to it, and
 subagents, summarization, title, one-shot utilities): a required-thinking model
 never enters the disable branch, effort is mapped through aliases or the default
 and otherwise dropped, and `dialect` synthesizes the on/off payload when no
-template exists. Legacy profiles (no mapping-valued `reasoning:` contract) keep the historical path
+template exists. For a top-level effort contract, a disabled template that sets
+`reasoning_effort: "none"` wins over explicit or default request effort. Legacy profiles (no mapping-valued `reasoning:` contract) keep the historical path
 byte-for-byte, including the synthesized `reasoning_effort=minimal` on the
 OpenAI-compatible disable path. The lead agent and the subagent descriptor resolve
 the same policy first so run metadata reports the effective values. Design note:
@@ -108,6 +112,16 @@ share `_convert_tools` so binding cannot discard the setting. Keep caller
 schemas and definitions unchanged. Offline sync/async request and tool-followup
 coverage: `tests/test_codex_tool_strict.py`.
 
+Codex forwards `tool_choice` from `bind_tools` and direct sync/async calls.
+Normalize `any`/`True` to `required`, named or wrapped function selections to
+Responses' flat `{type: function, name: ...}` shape, and omit `None`/`False`.
+Validate bound selections at `bind_tools`; validate invocation overrides again
+before HTTP. `required` needs at least one converted function tool, and a named
+selection must match a converted function. `auto` and `none` remain valid without
+tools. Per-call choices override bound choices without mutating caller definitions
+or history. Offline HTTP serialization and tool-followup coverage:
+`tests/test_codex_tool_choice.py`.
+
 ### Codex SSE termination (`packages/harness/deerflow/models/openai_codex_provider.py`)
 
 Completed responses with null, omitted, or empty `usage` retain their text,
@@ -125,6 +139,15 @@ reported as text instead of raising `AttributeError`. SSE failures do not enter
 the HTTP-status retry loop.
 Offline HTTP-stream coverage: `tests/test_codex_stream_terminal_events.py`.
 
+### Codex Retry Delays (`openai_codex_provider.py`)
+
+Prefer numeric `retry-after-ms` over numeric or HTTP-date `Retry-After` hints.
+Interpret HTTP-date values in UTC, including the obsolete timezone-less asctime
+form. Apply `utils.retry_after.bounded_retry_after_ms` to every parsed delay:
+past dates retry immediately; malformed, non-finite or over-24-hour hints retain
+local exponential backoff. Keep millisecond hints numeric-only. Offline coverage
+in `tests/test_codex_retry_after.py` includes public sync/async HTTP retries.
+
 ### Claude Code Credentials (`packages/harness/deerflow/models/credential_loader.py`)
 
 - `ClaudeChatModel.model_post_init` calls `load_claude_code_credential()` for every instance, and `create_chat_model` builds fresh instances per run (lead agent, title, summarization, subagents)
@@ -133,9 +156,11 @@ Offline HTTP-stream coverage: `tests/test_codex_stream_terminal_events.py`.
 ### Claude Retry Delays (`claude_provider.py`)
 
 `_calc_backoff_ms` uses `utils.retry_after.bounded_retry_after_ms` for integer-second
-provider hints. Invalid or over-24-hour values retain local exponential backoff;
-finite negative values clamp to zero. Sync/async 429/500 regressions live in
-`tests/test_claude_provider_retry_after.py` and use offline provider doubles.
+provider hints and HTTP-date hints (including obsolete forms interpreted in UTC).
+Invalid or over-24-hour values retain local exponential backoff; finite negative
+values and past dates clamp to zero. Sync/async 429/500 regressions live in
+`tests/test_claude_provider_retry_after.py`; `tests/test_claude_retry_after_dates.py`
+exercises public invocation through real SDK clients with offline HTTP transports.
 
 ### Provider Retry Admission (`claude_provider.py`, `openai_codex_provider.py`)
 
@@ -178,6 +203,11 @@ the shared simulated chunker. Preserve terminal usage exactly once, XML/native
 tool calls, invalid calls, and the original messages. Offline SDK boundary tests:
 `tests/test_mindie_provider.py::test_public_stream_compatibility_through_sdk`.
 
+Whole-response and streaming newline decoding protect both triple-backtick and
+triple-tilde fences. The earliest opener wins, only the same delimiter closes it,
+and an unclosed fence keeps the remainder verbatim. Boundary and mixed-delimiter
+regressions live in `tests/test_mindie_newline_fences.py`.
+
 `_fix_messages` converts tool results to the XML text format expected by MindIE.
 Only tool-message `type=json` payloads join the text channel; other non-text
 blocks remain omitted. Keep the `<tool_response>` escaping boundary and the
@@ -207,12 +237,21 @@ Direct `AppConfig.from_file()` continues to read only operator configuration.
 `config/managed_model_providers.py` is the sole registry for provider IDs, labels,
 endpoints, protocols, authentication parameter mappings, adapters and request
 defaults. Capability rules match exact verified model IDs; unknown preset IDs
-have an unsupported-thinking contract, no vision and no inferred context window.
+have an unsupported-thinking contract, no vision and no inferred context window. Verified DeepSeek presets declare an effort vocabulary of `low`/`medium`/`high`/`max`/`xhigh` (default `low`) and alias the generic `minimal` preset onto `low`, so a saved per-agent `minimal` default serializes as a value the official endpoint accepts (issue #4514).
 Preset drafts cannot supply endpoints or adapter paths. Legacy custom
 `openai-compatible` records retain endpoint-based official DeepSeek detection;
 never infer that adapter from a model-name substring. Reads do not migrate the
 catalog. New names are allocated under the existing catalog lock with bounded
 ASCII slugs and random suffixes; edits preserve names and references.
+
+Moonshot's two exact K3.1 Pro IDs use required thinking, `dialect=none`, preserved
+history and native `low/high/max` effort (default `max`, no aliases). The shared
+DeepSeek adapter gates final request normalization on the official Moonshot
+endpoint and effective request model, including an `extra_body.model` override.
+Omit the unsupported `thinking` switch and fixed sampling keys at both payload
+levels without mutating caller mappings; the SDK merges `extra_body` last.
+Keep K2.5, unknown IDs and other endpoints unchanged. Offline SDK coverage:
+`tests/test_managed_moonshot.py`; live acceptance is a separate validation.
 
 The admin-only `/api/managed-models/providers` exposes form metadata, not routing.
 Full updates require the current revision. Omitted keys are retained only for
@@ -228,6 +267,8 @@ provider settings/reasoning transforms as chat. Disable optional thinking for
 short probes; required thinking and unknown third-party models use automatic
 tool choice. MiniMax's existing adapter normalizes the OpenAI SDK's
 `max_completion_tokens` into MiniMax's documented `max_tokens` for both paths.
+The `stepfun` preset reuses `PatchedChatStepFun` for reasoning capture/replay and
+the same token-field normalization; its ordinary API route is distinct from Step Plan.
 Tests: `test_managed_models.py`, `test_managed_deepseek.py`,
 `test_managed_provider_presets.py` (real vendor SDKs with HTTP doubles), opt-in
 `test_managed_deepseek_live.py` / `test_managed_presets_live.py`, and

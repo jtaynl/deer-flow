@@ -4,7 +4,7 @@
 
 AIO has two distinct stdin contracts: the persistent `/v1/shell` transport is a
 PTY, while `/v1/bash` uses a subprocess pipe that stays open for writes. Keep
-persistent shell commands unchanged: the Lark broker shim already ignores TTY
+persistent shell stdin unchanged: the Lark broker shim already ignores TTY
 input. Only fresh `_run_bash_exec` calls prefix the original command with
 `exec < /dev/null` so default stdin gets immediate EOF; explicit
 pipes/heredocs/files still override fd0. Those sessions are created and
@@ -20,7 +20,45 @@ INFO logs contain argc/exit/elapsed only, never argument values.
 
 Regressions: `tests/test_aio_sandbox.py`, `tests/test_lark_broker.py`.
 
+## Command cancellation
+
+Managed bash uses existing async exec/poll APIs without retrying execution.
+Read only the current console entry; keep exit codes and persistent-shell stdin.
+Legacy Shell needs a same-line owner prefix. Poll by returned session/command identity; stop inherited owner processes through
+a separate fixed control command with pidfds. Missing command state or cleanup
+receipts fence reuse through existing quarantine. New output from a running
+command needs its next offset; empty polls retain the previous offsets.
+Markers support cooperative cleanup, not hostile-code isolation.
+
+## Readiness polling
+
+Build the async readiness client off the event loop. Drain construction and
+close a late client on caller cancellation. If construction or close is
+itself cancelled, log it and preserve the caller's original cancellation.
+Regression: `tests/blocking_io/test_aio_sandbox_readiness_ssl.py`.
+
 ## Reuse admission
+
+Open-mode creation returns its port reservation when the Docker or Apple
+Container CLI raises `FileNotFoundError` or `PermissionError` during spawn.
+Catch these only around the CLI call, preserving the original exception;
+post-start errors cannot prove absence. Restricted creation must not opt in:
+its proxy may already own the port, even if the final sandbox CLI cannot start.
+Regressions: `tests/test_aio_sandbox_spawn_ports.py`.
+
+Restricted creation tracks only the current call's proxy `docker create` boundary.
+A definite non-creation, confirmed proxy removal, or authoritative proxy absence
+permits returning its port. Preserve the creation error through ordinary
+rollback/probe failures and log their diagnostics. Register the reservation in
+`_unknown_cleanup_ports` before resources become discoverable; compare its token
+before release. Destroy transfers that token to its existing teardown entry so
+late startup failures cannot release a successor's port. Successful creation
+forgets only its own token without releasing the port.
+Uncertain reservations remain for the existing fenced `complete_absent_teardown`
+path or process restart. Ordinary creation does not reconcile earlier failures,
+and empty-URL destruction does not infer ports from unrelated unknown entries.
+Durable creation identity and automatic recovery are separate work. Regressions:
+`tests/test_aio_sandbox_restricted_creation_ports.py`.
 
 An implicit-shell fence is sticky for the container's lifetime, even after a
 successful explicit recovery session. `requires_container_recycle` includes
@@ -42,6 +80,8 @@ Local absence matching compares Docker's fixed error scaffolding
 case-insensitively — CLI v29 lowercases `Error: No such object:` to
 `error: no such object:` — while the resource name stays byte-exact and the
 whole message must match; Apple Container forms remain exact-match.
+Missing-network errors may end with Docker CLI v29's exact `exit status 1` line;
+other trailing diagnostics still fail closed.
 Remote proofs use `/api/sandboxes/{id}/presence`, which inspects the Pod directly;
 the ordinary status GET can return 404 merely because its Service is missing.
 This covers runtimes without a recoverable generation, including Apple Container.
@@ -73,6 +113,30 @@ under those same fences after confirmed absence, including a timed-out stop that
 actually removed the container.
 It also clears deterministic local proxy/network leftovers before recreation;
 unknown cleanup errors retain the quarantine record.
+Explicit stop failures use that same generation-bound quarantine before dropping
+tracking. Failed record writes retain metadata and fence cached lookups in memory.
+Warm-to-active promotion clears an obsolete in-memory fence under the metadata
+lock, only for the entry that passed reuse checks; a changed entry must retry.
+Partial shutdown raises and remains retryable; successful resources are not retried,
+and cleanup infrastructure closes only after every owned teardown completes.
+
+Signal handlers are a fallback for hosts without a lifespan (embedded
+`DeerFlowClient`, scripts). The handler runs `shutdown()` synchronously and
+force-destroys every sandbox, so on the Gateway's event-loop thread it would
+freeze the loop and kill in-flight runs before uvicorn starts the drain. Under
+`hold_sandbox_shutdown_ownership()` the constructor therefore installs only
+SIGHUP, which uvicorn does not handle; SIGTERM/SIGINT go to uvicorn and the
+lifespan hook shuts the provider down after the run drain and MCP teardown. A
+provider built before the declaration keeps its handlers: the Gateway declares
+first, and uvicorn already replaced any earlier handler and re-raises captured
+signals only after lifespan shutdown.
+
+`shutdown()` closes admission (`_admission_closed`) under `_lock` before its
+snapshot and never reopens it, even when a failed teardown resets
+`_shutdown_called` for retry. `acquire`/`acquire_async`, the post-serializer
+recheck and every active commit (warm reclaim, discovery, create) then raise
+`SandboxCapacityExceededError(reason="shutdown")`. A refused warm reclaim stays
+warm for shutdown to destroy; a refused create rolls back its container.
 
 Broker capability failures are unknown, never confirmed negatives. Cache only
 successful observations per provisioner endpoint/auth identity; a failed refresh

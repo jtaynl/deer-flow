@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import { type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import type { Locale } from "@/core/i18n/locale";
@@ -11,6 +12,8 @@ export type HeaderProps = {
   // always English and always points to "/" for home.
   homeURL?: string;
   locale?: Locale;
+  /** Optional search control, e.g. the docs layout's Pagefind search. */
+  search?: ReactNode;
 };
 
 export function Header({ className }: HeaderProps) {

@@ -9,6 +9,7 @@ import { RememberSessionOption } from "@/components/auth/remember-session-option
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AuthDisabledContext, useAuth } from "@/core/auth/AuthProvider";
+import { isValidEmail } from "@/core/auth/email";
 import { resolveAuthNextPath } from "@/core/auth/next-path";
 import {
   loadRememberLoginPreference,
@@ -78,10 +79,11 @@ export default function LoginPage() {
     setupStatusPhase === "unavailable" ||
     (setupStatusAttempt > 0 && setupStatusPhase === "checking");
 
-  // Redirect if already authenticated (client-side, post-login)
+  // Redirect if already authenticated. Replace, so Back does not return to a
+  // sign-in page that immediately redirects again.
   useEffect(() => {
     if (isAuthenticated) {
-      router.push(redirectPath);
+      router.replace(redirectPath);
     }
   }, [isAuthenticated, redirectPath, router]);
 
@@ -149,14 +151,31 @@ export default function LoginPage() {
     e.preventDefault();
     setError("");
     setShowSsoHint(false);
-    setLoading(true);
 
     if (!isLogin && !regularSignupAllowed) {
       setError(t.login.adminSetupRequiredDescription);
-      setLoading(false);
       return;
     }
 
+    // The form is `noValidate`, so the browser no longer rejects addresses
+    // its `type="email"` rule dislikes (e.g. a non-ASCII local part, which
+    // the backend accepts — #7488). Apply the permissive JS check instead.
+    const address = email.trim();
+    if (!isValidEmail(address)) {
+      setError(t.login.errors.invalid_email);
+      return;
+    }
+
+    if (password.length < (isLogin ? 6 : 8)) {
+      setError(
+        isLogin
+          ? t.login.errors.password_too_short
+          : t.login.errors.registration_password_too_short,
+      );
+      return;
+    }
+
+    setLoading(true);
     try {
       const endpoint = isLogin
         ? "/api/v1/auth/login/local"
@@ -165,9 +184,9 @@ export default function LoginPage() {
         ? new URLSearchParams({
             password,
             remember_me: String(rememberMe),
-            username: email,
+            username: address,
           })
-        : JSON.stringify({ email, password, remember_me: rememberMe });
+        : JSON.stringify({ email: address, password, remember_me: rememberMe });
 
       const headers: HeadersInit = isLogin
         ? { "Content-Type": "application/x-www-form-urlencoded" }
@@ -200,7 +219,7 @@ export default function LoginPage() {
         return;
       }
 
-      saveRememberLoginPreference({ email, rememberMe });
+      saveRememberLoginPreference({ email: address, rememberMe });
 
       // Both login and register set a cookie — redirect to workspace
       router.push(redirectPath);
@@ -210,6 +229,16 @@ export default function LoginPage() {
       setLoading(false);
     }
   };
+
+  // A signed-in session is already on its way to `redirectPath` (see the
+  // effect above), so it never sees the sign-in form.
+  if (isAuthenticated) {
+    return (
+      <div className="flex min-h-screen w-full items-center justify-center bg-gradient-to-b from-[#fdf2f3] via-white to-[#fbf5ec] px-6 text-[#0a1628]">
+        <p className="text-sm text-[#6b7280]">{t.login.pleaseWait}</p>
+      </div>
+    );
+  }
 
   return (
     <div className="relative flex min-h-screen w-full items-center justify-center overflow-hidden bg-gradient-to-b from-[#fdf2f3] via-white to-[#fbf5ec] px-6 py-12 text-[#0a1628]">
@@ -297,7 +326,7 @@ export default function LoginPage() {
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+          <form onSubmit={handleSubmit} noValidate className="mt-6 space-y-4">
             <div className="flex flex-col gap-1.5">
               <label
                 htmlFor="email"
