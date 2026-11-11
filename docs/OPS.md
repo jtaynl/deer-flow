@@ -2347,6 +2347,73 @@ sg docker -c 'docker logs --since 5m deer-flow-gateway 2>&1 \
 - **3a/3b:** clean boot, :2026 → 200, extensions_config.json md5 UNCHANGED (RW-mount watch), sentinel in sync, all invariants by instantiation (consolidation F / eviction confidence / authz F / heartbeat F / retrieval '' / plugins [] / subagent_batches F / head 0016).
 - **3c:** PW_STRONG PASS (first); chat×3 kimi/qwen/deepseek OK; sandbox bash `smoke-42` + present_files OK; subagent OK; thread-id 64 OK / 65 rejected; re-skin login 200 + WRI / 0 deerflow.tech / api 401; gateway log clean. (Smoke params per 08-24 lesson: recursion_limit 100, dot-free thread ids.)
 
+### 2026-11-11 sync — 600 commits, merge `eee787dc8` (`main`@`a73a94a6a`; 12 migrations 0041 → 0052) + carry `67fd7694b`
+- **GO 2026-11-11 07:34:49 UTC, owner-run** (`start_sync.sh go`; the owner's "Go ahead and sync, Wed 11 Nov" of 8 Nov), with the
+  sync launcher v3 `/home/brandon/wri-deerflow-sync-launcher` (MD5SUMS md5 `e6756362…`; verifier 337/0 GO). PREPARED 10 Nov
+  07:45:08–07:53:37 UTC (the owner's 2nd prepare; the 1st, 07:30, stopped on a false-positive 'late revert' `c738c5ef8`,
+  reviewed and acknowledged in `state/ack_reverts.txt`): merge `eee787dc8` + the sandbox carry `67fd7694b` (drop
+  SandboxMiddleware's no-op model hooks — the WRI carry of upstream `16d36ccd2`); images `:sync-a73a94a6` (gateway
+  `40ec3dcc755a`, frontend `94c8314c2e01`); rollback marks `:pre-sync-a73a94a6` (= the running build: gateway `d83f584e547a`,
+  frontend `0b4dc4a01068`) + git tag `pre-sync-a73a94a6`; unit tests 788 passed / 24 skipped; FE_NEXT 16.4.1; the way back's
+  database probe ok (read-only, at 0041, 12 steps). Logs and state: `~/deer-flow-sync-backups/sync-a73a94a6a/`.
+- **The database is PostgreSQL 18.6** (managed cluster, server_version_num 180006 — found at prepare; earlier rehearsals ran on
+  PG 16.2). Exact-replica PG18 rehearsal `wf_f5c6fc22-09a` = **GO_WITH_NOTES**: a postgres:18.6 replica of production's 0041
+  schema, full fingerprint byte-identical to production's (sha256 `caa129cc…`); the new image's boot 0041 → 0052 in 12 steps
+  (0.63 s); the way back (`kit/rollback_downgrade_to_0041.py`, as run_sync.sh invokes it): WILL_DROP all 0, DOWNGRADED_TO 0041,
+  after = before twice; the old build boots (0 upgrades); re-upgrade the same. **Drift on production, pre-existing, left
+  alone:** `uq_channel_connection_active_identity` (0001 baseline's partial unique index on channel_connections, WHERE status
+  <> 'revoked') has been MISSING since June (IM channels only — create it before IM channels are ever enabled, owner-approved
+  maintenance later); PK names from migrations 0027/0034 (`pk_notification_deliveries`, `pk_run_event_thread_seq`) differ from
+  create_all's `*_pkey`; 254 PG18 NOT NULL rows ('n') in pg_constraint; column order differs in 8 tables (incremental ALTERs).
+  None is touched by 0042–0052. **Next sync:** re-base the PRECONDITIONS fingerprintA on PG18 (the `caa129cc` parts) and add
+  the two PK names and the missing index to the migration-diff watch.
+- **The go (log `run_20261111T073449Z_go.log`):** gate ok (day/hours, no send, no other launcher in the last hour, no job, no
+  research run; upstream 58 commits past the pin, no late revert unrecorded); database deerflow_app, 37 tables at 0041, PG 18.6,
+  read committed, no blocking session; the enrollment-shaped connection works (statement_timeout 5 s, no URL
+  parameters). Before-state saved: alembic `0041_im_notice_preferences`, schema fingerprint `caa129ccef943483…` (the full
+  fingerprint byte-identical to the owner's read-only production read of 10 Nov 08:05 UTC). config.yaml: the `harness_guard`
+  stanza appended in place (md5 `b6c7df73`, inode 536614 kept; inert for the old build). **Restart** 07:35:17 (make down, up
+  to 90 s) → deploy.sh start 07:36:50 → up after 127 s (≈2 min down); boot 0041 → 0052 in 12 steps, startup complete, no
+  UndefinedColumn/UndefinedTable/error line.
+- **Verified:** 4 containers up (gateway + redis healthy) on the new images, nginx `nginx:1.31.2-alpine`, init on; env counts as
+  expected; `/`, `/login`, `/setup` 200 with WRI branding, `/api/models` 401; OWNERSHIP_OK. 3b: schema in sync; the 0052 probe
+  ok (harness_guard off, no SandboxMiddleware model hooks, our loop-warning text, versions); db after-check 49 tables, the
+  trigger on, its function owned by deerflow_app, no strict fencing; next 16.4.1. Battery 5/5: PW_STRONG PASS, MCP_POOL_OK,
+  ALL_OK, LANG_OK, FIRECRAWL_OK. config.yaml `b6c7df73` / extensions_config.json `efba0945` after.
+- **The one WARN is a false alarm by construction:** "the firecrawl smoke log shows no 'tier=jina outcome=ok' line" —
+  `smoke_firecrawl_inside.py`'s ladder() prints only the Firecrawl rung lines (`fc_lines`), so run_sync.sh:1244 can never find
+  a Jina line in that log. The ladder itself passed (good page 4,096 chars; denied page exhausted naming jina/firecrawl/tavily;
+  5 ladder log lines, consistent with Jina serving the good page); `agent:web_fetch` FETCH_OK=2847. For the next sync: print
+  the Jina rung line in the smoke (or grep the full ladder lines).
+- **3d, the LGI chokepoint trio** (qwen3.7-plus, `--no-fallback`, concurrently; `stage1_outputs_smoke_20261111_chokepoint/`,
+  07:43–07:58 UTC): Panama [OK] 900.3 s, Suez [OK] 901.9 s, Hormuz [OK] 470.4 s (14 Oct after the fix: 696 / 721 / 726 s), each
+  8/8 blocks; below the 150 % 'ran slow' note. Two ended at ≈900 s: watch the first November stage-1 runs' times and depth
+  (the sync adds per-subagent `thinking_enabled` / `reasoning_effort` overrides — docstring: None = default False — and leaves
+  the subagent timeouts as they were: fallback 900 s, global default 1800 s). After the trio: 0 sandboxes, 0 owner keys;
+  0 quarantine / ownership / stop-timeout / HARNESS GUARD / enrollment / producer / Readability lines; 'Summary chunk limit' 0,
+  'Summary carry' 0, 'Transient LLM error on attempt' 0.
+- **Step 9:** local-fixes fast-forwarded to `67fd7694b` (the live checkout; never reset, never forced); the local main marker →
+  `a73a94a6a`; pushed with this record after the owner's look.
+- **The owner's look:** 09:16–09:20 UTC, owner-run, three turns: 'use Python to work out 17 × 23' → 391 (16 s; one
+  `python -c` call in a new sandbox, `Sandbox ownership store: redis` logged once); the follow-up 'now add 9' in the same chat
+  → 400 (5 s); '用一句话介绍物流指数' → one sentence in Chinese (5 s; the reply follows the message's language, as before); the
+  per-turn token usage shows (input ≈40.5K, output ≈100). **ACCEPTED — the sync stands.**
+- **`check` (after DONE):** 1st, owner-run 09:11 UTC, before the look: error/traceback/500 0, run-event producer 0,
+  skill enrollment 0, Readability 0, checkpoint retention 0, HARNESS GUARD 0 — over the gateway's whole log since its start
+  07:36:56 UTC (restarts 0, healthy); 'Sandbox ownership store: redis' not yet (no use since DONE: the 848 log lines from
+  07:58:31 to 09:12 UTC are all `GET /health/ready`). 2nd, after the look: the lead's read-only re-count at 09:21 UTC (the same patterns as `check`, on `docker logs`,
+  without the launcher): error/traceback/500 0, producer 0, enrollment 0, Readability 0, retention 0, HARNESS GUARD 0;
+  'Sandbox ownership store: redis' seen (1); 3 run requests since DONE (the owner's three turns); the sandbox container up
+  (healthy).. **For the next sync:** the
+  check's heading 'the new gateway's log since its start, HH:MM UTC' prints the time of the check, not the start — print
+  the container's StartedAt and 'checked at HH:MM' instead.
+- **Rollback (on Claude's word only):** `start_sync.sh rollback "OWNER-APPROVED deerflow rollback a73a94a6a"` — the database
+  step `kit/rollback_downgrade_to_0041.py` (rehearsed on the PG18 replica), then the `:pre-sync-a73a94a6` images and tag.
+- **Follow-ups:** the smoke's Jina line and the check's heading (above); watch the first November stage-1 runs' durations
+  (two trio runs ended at ≈900 s); create `uq_channel_connection_active_identity` before IM channels are ever enabled
+  (owner-approved maintenance); re-base the PRECONDITIONS fingerprintA on PG18; keep the `:pre-sync-a73a94a6` images and tag
+  until the next sync.
+
 ### 2026-10-14 sync — 202 commits, merge `b448058b` (`main`@`4e9f6c68`; 8 migrations 0033 → 0041)
 - **MERGED 2026-10-14 ~06:13 UTC on the owner's "go ahead and sync"** (after "any problem if we go ahead and sync now"; parents
   `16f940ed` + `4e9f6c68` — the tip PINNED by the review; upstream had moved to `000b5d8c`: its 3 newer commits (IM channel
