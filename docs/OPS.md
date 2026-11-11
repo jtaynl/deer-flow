@@ -2412,7 +2412,8 @@ sg docker -c 'docker logs --since 5m deer-flow-gateway 2>&1 \
 - **Follow-ups:** the smoke's Jina line and the check's heading (above); watch the first November stage-1 runs' durations
   (two trio runs ended at ≈900 s); create `uq_channel_connection_active_identity` before IM channels are ever enabled
   (owner-approved maintenance); re-base the PRECONDITIONS fingerprintA on PG18; keep the `:pre-sync-a73a94a6` images and tag
-  until the next sync.
+  until the next sync. **Cleanup (owner's OK, 11 Nov ~09:40 UTC):** the older rollback images `:pre-sync-20261008`,
+  `:pre-sync-20261014` and `:post-sync-20261014` (gateway + frontend) removed, ≈14 GB freed; the git tags stay.
 
 ### 2026-10-14 sync — 202 commits, merge `b448058b` (`main`@`4e9f6c68`; 8 migrations 0033 → 0041)
 - **MERGED 2026-10-14 ~06:13 UTC on the owner's "go ahead and sync"** (after "any problem if we go ahead and sync now"; parents
