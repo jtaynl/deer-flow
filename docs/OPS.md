@@ -317,7 +317,16 @@ Backups) are a separate, coarser safety net — check that they are on.
 
 ## Upstream sync workflow
 
-> **7 Nov 2026 — the hold is over.** The LGI October 2026 edition was released on 7 Nov at 08:26:59 UTC, so the freeze
+> **11 Nov 2026 — newest sync record: '### 2026-11-11 sync'** (600 commits; merge `eee787dc8` (`main`@`a73a94a6a`) + the
+> sandbox carry `67fd7694b`; alembic 0041 → 0052; in the dated sync log further down — search for the date). Rollback, on
+> Claude's word only, as that record gives it: the sync launcher's `rollback` — the database step
+> `kit/rollback_downgrade_to_0041.py` (rehearsed on a PG18 replica), then the `:pre-sync-a73a94a6` images (gateway
+> `d83f584e547a`, frontend `0b4dc4a01068`) and git tag `pre-sync-a73a94a6` (= `91685872e`), all kept until the next sync.
+> The images `:pre-sync-20261008`, `:pre-sync-20261014` and `:post-sync-20261014` were removed on 11 Nov (the git tags
+> stay), so the 14 Oct rollback recipes below no longer work as written. The 7 Nov, 18 Oct and 14 Oct paragraphs below are
+> history.
+>
+> **(History.) 7 Nov 2026 — the hold is over.** The LGI October 2026 edition was released on 7 Nov at 08:26:59 UTC, so the freeze
 > (no DeerFlow change from 23 Oct) and the 18 Oct hold have ended. The next sync is planned for the week of 9 Nov and stays
 > two-step: fetch, review the range beyond `12e619c2` (the fork's main already shows about 480 more commits), report it, and
 > merge and deploy only on the owner's 'go ahead and sync'. Not built yet: the patch that deletes SandboxMiddleware's two
@@ -348,7 +357,7 @@ Backups) are a separate, coarser safety net — check that they are on.
 >
 > The deploy, with its boot migrations, will need an owner-run launcher: the classifier blocks production deploys.
 >
-> **Newest sync record:** '### 2026-10-14 sync' (in the dated sync log further down — that log is NOT in date order;
+> **Previous sync record (history):** '### 2026-10-14 sync' (in the dated sync log further down — that log is NOT in date order;
 > search for the date). It carries a runtime patch: the revert of upstream `80a71b09` ("Runtime behaviour" under 'Local
 > patches currently carried' — check it at every sync). **Freeze (23 Oct – 7 Nov 2026): ended** with the LGI
 > October 2026 release on 7 Nov. The images `:pre-sync-20261008`, `:pre-sync-20261014` and `:post-sync-20261014` were kept
@@ -1595,7 +1604,8 @@ Expect two JSON-RPC response lines — an `initialize` ack with
 Authoritative list — regenerate the raw file set with
 `git diff --name-only upstream/main...local-fixes`.
 
-**One runtime behaviour patch is carried (since 2026-10-14): the revert of upstream `80a71b09`** (see "Runtime
+**Two runtime behaviour patches are carried: the revert of upstream `80a71b09` (since 2026-10-14) and the removal of
+SandboxMiddleware's no-op model hooks (`67fd7694b`, since 2026-11-11)** (see "Runtime
 behaviour" below). The two bug hotfixes we once had were absorbed upstream (see "Absorbed" below). Everything else
 carried is **deployment config**, the **WRI re-skin**, or the fork-owned **chained `web_fetch`** module (its own section
 above; upstream never writes that path). All of it can conflict, so treat this list as the checklist after every sync.
@@ -1603,7 +1613,8 @@ above; upstream never writes that path). All of it can conflict, so treat this l
 ### Runtime behaviour
 | Path | What we carry | Why |
 | --- | --- | --- |
-| `agents/middlewares/loop_detection_middleware.py` (+ `backend/tests/test_loop_detection_middleware.py`, one README line, one middleware `AGENTS.md` line) | **upstream `80a71b09` (#6804) REVERTED** (`05883116`, 2026-10-14): the two warn-level loop messages read "…Stop calling tools and produce your final answer now…" again; file + tests byte-identical to `89c9f087` | #6804's "Stop calling <tool> and wrap up … first write what you have collected so far to that file" made qwen3.7-plus write a file after the per-tool frequency warning and then resume researching → `GraphRecursionError` at 500 (Suez, 14 Oct). Research tasks here answer inline and run without subagents. **After every sync:** `git log <old-main>..<new-main> -- backend/packages/harness/deerflow/agents/middlewares/loop_detection_middleware.py`; both `_WARNING_MSG` and `_TOOL_FREQ_WARNING_MSG` must still contain "Stop calling tools and produce your final answer now"; if upstream edits those lines again, keep ours and re-run the qwen3.7-plus chokepoint smoke. Drop the patch only after that smoke passes with upstream's text. |
+| `agents/middlewares/loop_detection_middleware.py` (+ `backend/tests/test_loop_detection_middleware.py`, one README line, one middleware `AGENTS.md` line) | **upstream `80a71b09` (#6804) REVERTED** (`05883116`, 2026-10-14): the two warn-level loop messages read "…Stop calling tools and produce your final answer now…" again; since the 2026-11-11 sync the file is upstream `a73a94a6a` with #6804/#7588's wrap-up block removed and our two warning texts restored, #7742's nested-JSON fix kept (blob `05756d92`; never `git checkout --ours` it — that drops #7742); the tests byte-identical to `89c9f087` (`2283ded7`) | #6804's "Stop calling <tool> and wrap up … first write what you have collected so far to that file" made qwen3.7-plus write a file after the per-tool frequency warning and then resume researching → `GraphRecursionError` at 500 (Suez, 14 Oct). Research tasks here answer inline and run without subagents. **After every sync:** `git log <old-main>..<new-main> -- backend/packages/harness/deerflow/agents/middlewares/loop_detection_middleware.py`; both `_WARNING_MSG` and `_TOOL_FREQ_WARNING_MSG` must still contain "Stop calling tools and produce your final answer now"; if upstream edits those lines again, keep ours and re-run the qwen3.7-plus chokepoint smoke. Drop the patch only after that smoke passes with upstream's text. |
+| `backend/packages/harness/deerflow/sandbox/middleware.py` (+ `backend/tests/test_wri_sandbox_no_model_node.py`; skips added to `test_sandbox_prewarm.py`, `test_sandbox_middleware.py`, `test_bench_sandbox_prewarm.py`) | **upstream `16d36ccd2` (#6998)'s no-op `before_model`/`abefore_model` overrides DELETED** (`67fd7694b`, 2026-11-11), with the unused `start_sandbox_prewarm` import; the 7 upstream prewarm tests that need the hooks are skipped (one hangs without them) | with `sandbox.prewarm` off the hooks do nothing but add one graph step per research round (13 → 14; about 7 % fewer rounds at our recursion limits). The WRI test is a tripwire that fails if upstream's hooks come back; never set `sandbox.prewarm` while this is carried (it would be silently inert). **After every sync:** the step-3b 0052 probe must report no SandboxMiddleware model hooks. |
 | `backend/packages/harness/deerflow/community/wri_chained_fetch/` (+ `backend/tests/test_wri_chained_fetch.py`) | the chained `web_fetch` (Jina → Firecrawl → Tavily) | fork-owned and additive — see "WRI chained `web_fetch`" above |
 
 ### Deployment / infrastructure
@@ -1618,6 +1629,9 @@ above; upstream never writes that path). All of it can conflict, so treat this l
 if the file is ever recreated). `config.yaml` is likewise gitignored/instance-only (models incl. `kimi-k3`) **and, since 2026-09-29, carries the LOAD-BEARING `lead_prompt_overlay.append` block = the `<language>` rule
 (moved out of `prompt.py`, see "Moved to instance config" below). If `config.yaml` is ever rebuilt from the example the
 language rule is GONE until that block is restored — copies in `~/deer-flow-sync-backups/*/config.yaml`.**
+**Since 2026-11-11 `config.yaml` also carries `harness_guard:` / `enabled: false` — upstream's default is `true` (a
+`config.yaml` rebuilt from the example switches HarnessGuard ON silently); the step-3b 0052 probe asserts it off; re-enable
+only after a deliberate qwen3.7-plus chokepoint smoke (review-a73a94a6a).**
 
 ### WRI re-skin (the recurring conflict surface)
 | Path(s) | What we carry |
@@ -1649,7 +1663,8 @@ factually reference `bytedance/deer-flow`, and their nav entries are already rem
   The 3b probe now asserts `language_block_in_template: false`, `language_overlay_rendered_count: 1`,
   `language_overlay_at_end: true`, `lead_prompt_overlay_append_set: true`. No backend patch is carried for the
   `<language>` rule any more. (Backend files carried today: the `80a71b09` revert — "Runtime behaviour"; the fork-owned
-  `wri_chained_fetch` module; `backend/Dockerfile`; `backend/scripts/schema_sync.py`.)
+  `wri_chained_fetch` module; the SandboxMiddleware hook removal `67fd7694b` (since 2026-11-11); `backend/Dockerfile`;
+  `backend/scripts/schema_sync.py`.)
   ⚠ DUPLICATE trap of the FOWNER kind: should upstream ever ship its own `<language>` block in the template, the
   rendered prompt would carry two — the probe's count=1 assertion is the tripwire.
   **Restoring the block after a config.yaml loss:** the exact text is in git history —
