@@ -126,6 +126,11 @@ still works (read-only check). `env.before` shredded. ⚠ The on-box backups `~/
 carry the OLD doadmin DSN (now dead): NEVER restore `DATABASE_URL` from them — a rollback keeps deerflow_app's DSN from the live `.env`.
 (A `.env` backup taken AFTER a credential change holds LIVE credentials — keep it at 600 and shred it when its rollback
 window closes; the private notes say which backups those are.)
+**12 Nov 2026:** the nine older `.env` copies in `~/deerflow-syncbak-20260802-010014` … `~/deerflow-syncbak-20260917-023308`
+(August–September instance backups) were shredded (`shred -u`, 10:56 UTC) on the owner's OK, after checking that none
+was in use: each was a separate single-link file whose content differed from the live `.env` and `frontend/.env`; no
+container mount or compose label, cron line, systemd unit, Caddy file, shell profile or open file referred to them; the
+running stack reads only `~/deer-flow/.env`. Their `config.yaml` / `extensions_config.json` / `schema_sync.py` copies remain.
 
 ## Instance config change — 2026-10-01 16:56 UTC: `deepseek-v4-pro` `max_tokens` 32768 → 65536
 
@@ -313,7 +318,10 @@ the gist copy has one (md5 `c0e303f2`). Both fingerprints denote the same JSON; 
 2026-09-29 01:31 UTC: both copies identical modulo that newline.
 
 Recovery uses them in step 5b of the gist's rebuild procedure. Droplet-level backups (DigitalOcean control panel →
-Backups) are a separate, coarser safety net — check that they are on.
+Backups) are a separate, coarser safety net — ON for both droplets (the ops box and the LGI site's): daily between 04:00
+and 08:00 UTC, kept for 30 days (the owner checked, 12 Nov 2026). DigitalOcean deletes a droplet's backups when the
+droplet itself is destroyed: never destroy a broken ops box before restoring it, or first turn its newest backup into a
+snapshot.
 
 ## Upstream sync workflow
 
