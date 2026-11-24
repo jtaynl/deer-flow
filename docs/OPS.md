@@ -334,6 +334,26 @@ snapshot.
 > stay), so the 14 Oct rollback recipes below no longer work as written. The 7 Nov, 18 Oct and 14 Oct paragraphs below are
 > history.
 >
+> **Upstream check 24 Nov 2026 (report only; nothing merged).** The range was `main` a73a94a6a..`ec189ccd2` (upstream main of
+> 24 Nov), 284 commits, with 8 migrations 0053–0060. The review is saved in
+> ~/deer-flow-sync-backups/review-ec189ccd2/ (REVIEW_2026-11-24_upstream_ec189ccd2.md; the prepared kits in kits/). The owner
+> chose to **wait until the December release cycle is over and sync on Tue 15 Dec 2026** (backup days Fri 18, Mon 21 and Tue
+> 22 Dec), after a delta review of what upstream adds by 8–11 Dec. To act on at that sync:
+> - **#8248 (`25a744a99`) made the per-tool frequency warning and stop observe-only.** The 'Stop calling tools and produce your
+>   final answer now' nudge after 30 calls of one tool type is gone upstream (measured offline: the tip runs 60 search rounds
+>   where this build answers after 30). Carry it (prepared: option a2 plus a tripwire test) and record it under 'Runtime
+>   behaviour'. The loop file needs the prepared blob-gated resolution: `git checkout --ours` breaks the gateway import.
+> - Model-visible changes with no switch (#7986 tool-result envelopes and a contract paragraph, the clarification and
+>   deep-research rewrites; #8248 shorter citations guidance; #8114 the summary prompt): step 3d (the chokepoint trio and a
+>   3-country sample) is a hard gate.
+> - Migrations 0053–0060 add tables for features not used here; a rollback needs a rehearsed 0060 → 0052 downgrade on a PG18
+>   replica.
+> - The sync launcher's hard gates are pinned to the 11 Nov facts (next 16.4.1, the table counts, the migration files, its days,
+>   the deleted frequency constant read by the 3b probe): build v4.
+> - Voice input (#8286): the microphone now shows only with a `voice_input:` block (an OpenAI-compatible transcription
+>   service). The owner wants it kept: configure it at the sync. The new Share button stays as upstream ships it (no carry).
+> - Re-skin: two locale conflicts (take upstream's voice string; rebrand the new extensions guide hint to 'WRI AI').
+>
 > **(History.) 7 Nov 2026 — the hold is over.** The LGI October 2026 edition was released on 7 Nov at 08:26:59 UTC, so the freeze
 > (no DeerFlow change from 23 Oct) and the 18 Oct hold have ended. The next sync is planned for the week of 9 Nov and stays
 > two-step: fetch, review the range beyond `12e619c2` (the fork's main already shows about 480 more commits), report it, and
